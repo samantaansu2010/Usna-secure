@@ -1,19 +1,18 @@
 # USNA Secure
 
-A local, offline, encrypted vault for Windows. It stores app credentials, authenticator (TOTP) secrets, secure
-notes, passkey records and, eventually, encrypted private files. There is no account, no cloud, no telemetry and no
-network code. You download it, create a vault, and use it entirely offline.
+A local, offline, encrypted vault for Windows. It stores account credentials, authenticator (TOTP) secrets, secure
+notes, passkey records, per-account recovery codes, and encrypted file objects. It requires no account, cloud service,
+telemetry, or network connection during normal use.
 
-> **Read this first: honest status**
+> **Current status: early build, not security-audited**
 >
-> * The **cryptographic core** (`crates/vault-core`) has a full test suite. The project owner reported the
->   milestone-1 verification run as green; the author of this document has not run it independently.
-> * The **desktop app** (`src-tauri/`, `ui/`) is written but **has not been compiled or run yet**. Expect compile
->   errors on its first build.
-> * Nothing here has been security-reviewed or audited. **Do not store real secrets in it yet.** It is not
->   production-ready and makes no claim of being unbreakable.
-> * Encrypted files and folders are now **written** (core format + app screens) but the author has **not compiled or run** them. Backups and
->   vault-key rotation in the app are **not implemented** (designed, not built).
+> * The project owner reported a successful Windows desktop build, installer, and app test suite before the current
+>   `feature/vault-redesign` changes. This branch adds the redesigned interface, metadata search, recovery-code management,
+>   and account JSON import/export, so its latest Windows CI result and local build must be checked before use.
+> * GitHub Actions tests the core on Windows and Linux; the Tauri backend is tested on Windows.
+> * No independent security review or audit has been completed. Do not store irreplaceable real secrets in an unaudited build.
+> * Account JSON exports are **plaintext** and contain secrets. Encrypted vault backup/restore (`.usnabak`) and the
+>   vault-key rotation UI are not implemented. Secret wiping is best-effort, not a guarantee of perfect erasure.
 
 License: Apache License 2.0 (see `LICENSE`).
 
@@ -51,13 +50,13 @@ License: Apache License 2.0 (see `LICENSE`).
 | Encrypted database snapshot (padded, authenticated) | Implemented and tested |
 | Password change (re-wrap the vault key) | Implemented and tested |
 | Vault-key rotation (core API) | Implemented and tested; **not exposed in the app** |
-| Per-file key generation and wrapping (core API) | Implemented and tested; no file storage yet |
-| Desktop app: first-run setup, unlock, lock, inactivity lock | Written, **not yet compiled** |
-| Desktop app: apps and notes, search, favorites, edit, delete | Written, not yet compiled |
-| Desktop app: live TOTP code, password generator, timed clipboard clearing | Written, not yet compiled |
-| Encrypted file objects in the core (streaming, random access, tamper matrix) | Written, **not yet compiled** |
-| Desktop app: folders, import/export, image preview, integrity check, single-instance lock, unlock back-off | Written, **not yet compiled** |
-| Transactional saves: a failed write reverts the live model; files are deleted only after the new snapshot is committed | Written with failure-injection tests (unrun); fixes a bug found in review (`docs/DESIGN_REVIEW.md` R15) |
+| Per-file key generation and wrapping | Implemented and tested; used by encrypted file-object storage |
+| Desktop app: first-run setup, unlock, lock, inactivity lock | Built and tested by the project owner before this redesign branch |
+| Desktop app: accounts/notes, favorites, edit, delete, password generator, TOTP, timed clipboard clearing | Implemented; rerun the Windows app suite after branch changes |
+| Encrypted file objects in the core (streaming, random access, tamper matrix) | Implemented and tested |
+| Desktop app: folders, encrypted file import/export, image preview, integrity check, single-instance lock, unlock back-off | Implemented; rerun the Windows app suite after branch changes |
+| Redesigned workspace, metadata search, per-account recovery codes, account JSON import/export | Added on `feature/vault-redesign`; verification is pending for the latest revision |
+| Transactional saves: a failed write reverts the live model; files are deleted only after the new snapshot is committed | Implemented with failure-injection tests; the Windows Tauri test suite covers the app transaction layer |
 | Streaming video/PDF preview (`usna://`), file-key rotation | Not built |
 | Encrypted backup/export (`.usnabak`) and restore | Specified only (`docs/BACKUP_FORMAT.md`) |
 | Real passkey (WebAuthn) support | Out of scope for now; only a record flag |
@@ -180,7 +179,7 @@ usna-secure/
 | `ARCHITECTURE.md` | Layers, trust boundary, command boundary, storage comparison (SQLCipher vs SQLite vs snapshot), what an attacker learns |
 | `THREAT_MODEL.md` | 14 threats with verdicts: protected, partial, or out of scope |
 | `VAULT_FORMAT.md` | **Normative** byte-level spec: header, key hierarchy, snapshot, commit and crash recovery, versioning |
-| `FILE_FORMAT.md` | Encrypted file objects: chunking, nonces, authenticated index, final flag (not implemented yet) |
+| `FILE_FORMAT.md` | Normative format for encrypted file objects: chunking, nonces, authenticated index, final flag |
 | `BACKUP_FORMAT.md` | `.usnabak` single-file backup and reliable restore (not implemented yet) |
 | `DATA_MODEL.md` | Entry and field model, TOTP design with RFC vectors, passkey record |
 | `DEPENDENCIES.md` | Every dependency, why it is there, and a ledger of what was verified against manifests |
@@ -580,7 +579,7 @@ files. Never hand-edit `src/test_vectors.rs`.
 
 ### Limitations (by design or by current state)
 
-* The app has not been compiled or run. The core tests have been run only by the project owner.
+* The baseline desktop app was built by the project owner; after checkout, rerun `scripts\build-app.ps1` and check the current branch's GitHub Actions before trusting new changes.
 * Interim storage: instance lock and leftover cleanup exist, but there is no write-through rename and no rotation recovery table.
 * No backups and no vault-key rotation in the app; file previews are images only (up to 25 MiB), other files are export-only.
 * Passkeys are a record only. The app is not a passkey authenticator.
