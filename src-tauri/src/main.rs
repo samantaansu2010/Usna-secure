@@ -31,6 +31,8 @@ fn main() {
             commands::change_password,
             commands::touch,
             commands::list_items,
+            commands::export_accounts,
+            commands::import_accounts,
             commands::search_items,
             commands::get_recovery_codes,
             commands::add_recovery_codes,
