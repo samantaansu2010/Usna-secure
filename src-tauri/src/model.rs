@@ -266,14 +266,18 @@ pub struct ItemInput {
     pub notes: String,
 }
 
+fn normalized_search_text(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
 impl Item {
     /// Match user-visible metadata only. Secret values are deliberately excluded from search.
     pub fn matches_search(&self, query: &str) -> bool {
-        let needle = query.trim().to_lowercase();
+        let needle = normalized_search_text(query);
         needle.is_empty()
-            || self.title.to_lowercase().contains(&needle)
-            || self.username.to_lowercase().contains(&needle)
-            || self.notes.to_lowercase().contains(&needle)
+            || normalized_search_text(&self.title).contains(&needle)
+            || normalized_search_text(&self.username).contains(&needle)
+            || normalized_search_text(&self.notes).contains(&needle)
     }
 
     pub fn summary(&self) -> ItemSummary {
@@ -784,11 +788,11 @@ mod tests {
     #[test]
     fn search_matches_metadata_but_never_secret_values() {
         let mut m = Model::default();
-        let mut entry = input("Discord");
+        let mut entry = input("Discord   Backup");
         entry.username = "anshu@example.test".into();
         entry.password = Some("password-secret-xyz".into());
         entry.totp_secret = Some("JBSWY3DPEHPK3PXP".into());
-        entry.notes = "backup email and account recovery".into();
+        entry.notes = "backup\t email and account\n recovery".into();
         let (id, undo) = m.upsert(entry).unwrap();
         undo.discard();
         let (_, undo) = m.add_recovery_codes(id, vec!["recovery-secret-123".into()]).unwrap();
@@ -796,8 +800,9 @@ mod tests {
         let item = m.find(id).unwrap();
 
         assert!(item.matches_search("discord"));
+        assert!(item.matches_search("  DISCORD \t BACKUP  "));
         assert!(item.matches_search("ANSHU@EXAMPLE.TEST"));
-        assert!(item.matches_search("account recovery"));
+        assert!(item.matches_search("account   recovery"));
         assert!(!item.matches_search("password-secret-xyz"));
         assert!(!item.matches_search("JBSWY3DPEHPK3PXP"));
         assert!(!item.matches_search("recovery-secret-123"));
