@@ -187,8 +187,8 @@
   const A = {
     async nav(d) {
       S.view = d.view;
-      S.shown = null; S.recoveryCodes = null;
-      if (S.view === 'set') { S.sel = null; S.detail = null; }
+      S.sel = null; S.detail = null; S.shown = null; S.recoveryCodes = null;
+      S.folder = null; S.files = []; S.file = null; S.preview = null;
       render(); renderDetail();
     },
     async open(d) { S.file = null; S.preview = null; S.sel = Number(d.id); S.shown = null; S.recoveryCodes = null; S.detail = await invoke('get_item', { id: S.sel }); render(); renderDetail(); },
@@ -401,7 +401,10 @@
       e.preventDefault(); A.lock().catch(() => {});
     } else if (e.ctrlKey && e.key.toLowerCase() === 'k' && !$('app').hidden) {
       e.preventDefault();
-      if (S.view === 'set') { S.view = 'all'; render(); }
+      if (S.view === 'set' || S.view === 'folder') {
+        S.view = 'all'; S.folder = null; S.files = []; S.file = null; S.preview = null;
+        render(); renderDetail();
+      }
       $('q').focus(); $('q').select();
     } else if (e.key === 'Escape' && $('recoverydlg').open) {
       $('recoveryInput').value = '';
