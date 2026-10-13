@@ -268,11 +268,12 @@ pub struct ItemInput {
 
 impl Item {
     /// Match user-visible metadata only. Secret values are deliberately excluded from search.
-    pub fn matches_search(&self, needle: &str) -> bool {
+    pub fn matches_search(&self, query: &str) -> bool {
+        let needle = query.trim().to_lowercase();
         needle.is_empty()
-            || self.title.to_lowercase().contains(needle)
-            || self.username.to_lowercase().contains(needle)
-            || self.notes.to_lowercase().contains(needle)
+            || self.title.to_lowercase().contains(&needle)
+            || self.username.to_lowercase().contains(&needle)
+            || self.notes.to_lowercase().contains(&needle)
     }
 
     pub fn summary(&self) -> ItemSummary {
