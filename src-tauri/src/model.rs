@@ -803,6 +803,34 @@ mod tests {
     }
 
     #[test]
+    fn account_export_document_round_trips_through_json() {
+        let document = AccountExportDocument {
+            format: "USNA Secure Account Export".into(),
+            version: 1,
+            items: vec![PortableItem {
+                kind: "app".into(),
+                title: "Discord".into(),
+                favorite: true,
+                username: "member@example.test".into(),
+                password: "json-password-secret".into(),
+                totp_secret: "JBSWY3DPEHPK3PXP".into(),
+                passkey: true,
+                notes: "import test".into(),
+                recovery_codes: vec![RecoveryCode { code: "recovery-code-secret".into(), used: false }],
+            }],
+        };
+        let json = serde_json::to_vec(&document).unwrap();
+        let restored: AccountExportDocument = serde_json::from_slice(&json).unwrap();
+        assert_eq!(restored.format, "USNA Secure Account Export");
+        assert_eq!(restored.version, 1);
+        assert_eq!(restored.items.len(), 1);
+        assert_eq!(restored.items[0].title, "Discord");
+        assert_eq!(restored.items[0].password, "json-password-secret");
+        assert_eq!(restored.items[0].recovery_codes[0].code, "recovery-code-secret");
+        assert!(!restored.items[0].recovery_codes[0].used);
+    }
+
+    #[test]
     fn account_import_is_validated_as_a_batch_and_undoable() {
         let mut m = Model::default();
         let app = PortableItem {
