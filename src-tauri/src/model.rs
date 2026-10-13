@@ -532,8 +532,15 @@ impl Model {
             if record.kind != "app" && record.kind != "note" {
                 return Err("The export contains an unknown entry type.".into());
             }
-            if !record.totp_secret.is_empty() && totp::decode_base32(&record.totp_secret).is_none() {
-                return Err(format!("The authenticator secret for '{}' is invalid Base32.", record.title));
+            if !record.totp_secret.is_empty() {
+                let mut decoded_secret = totp::decode_base32(&record.totp_secret);
+                let valid = decoded_secret.is_some();
+                if let Some(secret) = decoded_secret.as_mut() {
+                    secret.zeroize();
+                }
+                if !valid {
+                    return Err(format!("The authenticator secret for '{}' is invalid Base32.", record.title));
+                }
             }
             if record.kind == "note"
                 && (!record.username.is_empty() || !record.password.is_empty() || !record.totp_secret.is_empty()
