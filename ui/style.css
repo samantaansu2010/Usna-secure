@@ -175,8 +175,6 @@ dialog label { display: block; margin: 12px 0 5px; color: var(--mut); font-size:
 dialog label.chk { display: flex; align-items: flex-start; gap: 8px; margin-top: 14px; line-height: 1.4; }
 dialog label.chk input { margin-top: 4px; }
 dialog .in { margin-bottom: 4px; }
-#dlg, #pwdlg, #namedlg { color-scheme: dark; }
-#dlg label, #pwdlg label, #namedlg label { color: var(--mut); }
 @media (max-width: 1170px) {
   #app { grid-template-columns: 210px minmax(350px, 1fr) 315px; }
   .workspace { padding-inline: 23px; }
@@ -203,7 +201,6 @@ dialog .in { margin-bottom: 4px; }
   .search-box { width: 100%; flex-basis: 100%; order: 2; }
   .new-item-button { width: 100%; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); }
-  .detail-panel { inset-left: 54px; }
   .detail-panel { inset: 0 0 0 54px; padding: 23px 14px; }
   .fr { flex-wrap: wrap; }
   .code { font-size: 22px; }
