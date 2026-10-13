@@ -634,11 +634,11 @@ pub fn copy_field(
             return Err("There is nothing to copy.".into());
         }
 
-        let mut cb = arboard::Clipboard::new().map_err(|e| format!("Clipboard unavailable: {e}"))?;
-        // Copy and tracking update are serialized with expiry timers. The lock order is
-        // session -> copied, matching lock_now's session-then-copied sequence.
+        // Copy and tracking update are serialized with expiry timers. Use a consistent
+        // lock order: session -> copied -> OS clipboard.
         let mut copied = state.copied.lock()
             .map_err(|_| "Internal error (clipboard state lock poisoned).".to_string())?;
+        let mut cb = arboard::Clipboard::new().map_err(|e| format!("Clipboard unavailable: {e}"))?;
         cb.set_text(value.as_str()).map_err(|e| format!("Could not copy: {e}"))?;
         let generation = copied.replace(value);
         Ok((generation, s.model.settings.clipboard_clear_secs))
