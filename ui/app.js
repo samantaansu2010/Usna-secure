@@ -10,7 +10,8 @@
   const COLORS = ['#ffb454', '#3fb8a8', '#8fb7ff', '#ff8f7a', '#c3a6ff', '#7bd88f'];
   const NAV = [['all', '◫', 'All'], ['app', '⌘', 'Apps'], ['folder', '▤', 'Folders'], ['fav', '★', 'Favorites'], ['note', '✎', 'Secure notes'], ['set', '⚙', 'Settings']];
   const EMPTY = '<div class="empty">Select an item to see its fields.</div>';
-  const S = { items: [], view: 'all', sel: null, detail: null, shown: null, settings: { auto_lock_secs: 300, clipboard_clear_secs: 20 }, totpTimer: null, busy: false,
+  const S = { items: [], searchResults: null, searchSeq: 0, view: 'all', sel: null, detail: null, shown: null, recoveryCodes: null,
+    settings: { auto_lock_secs: 300, clipboard_clear_secs: 20 }, totpTimer: null, busy: false,
     folders: [], folder: null, files: [], file: null, preview: null, verify: null, nameMode: null };
 
   // ---- helpers --------------------------------------------------------------------------------
@@ -18,6 +19,13 @@
   function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); }
   const errText = (e) => (typeof e === 'string' ? e : (e && e.message) || 'Something went wrong.');
   function screen(name) { for (const id of ['setup', 'lock', 'app']) $(id).hidden = id !== name; }
+  function applyTheme(theme, persist = true) {
+    const selected = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = selected;
+    try {
+      if (persist) localStorage.setItem('usna-secure-theme', selected);
+    } catch (_) { /* Theme persistence is optional; vault data never uses browser storage. */ }
+  }
   function strength(p, barId) {
     let s = 0; if (p.length >= 12) s++; if (p.length >= 16) s++; if (/[a-z]/.test(p) && /[A-Z]/.test(p)) s++; if (/\d/.test(p)) s++; if (/[^A-Za-z0-9 ]/.test(p) || p.split(' ').length >= 4) s++;
     s = p ? Math.min(s, 4) : 0; const b = $(barId); b.style.width = (s * 25) + '%'; b.style.background = ['var(--bad)', 'var(--bad)', 'var(--ac)', 'var(--ok)', 'var(--ok)'][s];
@@ -27,6 +35,9 @@
   // ---- screens and state --------------------------------------------------------------------
   async function boot() {
     try {
+      let savedTheme = null;
+      try { savedTheme = localStorage.getItem('usna-secure-theme'); } catch (_) { /* optional */ }
+      applyTheme(savedTheme || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'), false);
       const st = await invoke('vault_status');
       if (!st.exists) { screen('setup'); $('spw').focus(); }
       else if (!st.unlocked) { screen('lock'); $('pw').focus(); }
@@ -35,16 +46,18 @@
   }
   async function enter() { screen('app'); S.view = 'all'; S.settings = await invoke('get_settings'); await refresh(); renderDetail(); }
   function resetUi(message) {
-    S.items = []; S.sel = null; S.detail = null; S.shown = null; S.folders = []; S.folder = null; S.files = []; S.file = null; S.preview = null; S.verify = null;
+    S.items = []; S.searchResults = []; S.searchSeq++; S.sel = null; S.detail = null; S.shown = null; S.recoveryCodes = null;
+    S.folders = []; S.folder = null; S.files = []; S.file = null; S.preview = null; S.verify = null;
     $('content').innerHTML = ''; $('detail').innerHTML = EMPTY; $('q').value = '';
-    for (const id of ['dlg', 'pwdlg', 'namedlg']) { const d = $(id); if (d.open) d.close(); }
-    for (const id of ['fp', 'fo', 'cp0', 'cp1', 'cp2', 'pw', 'spw', 'spw2']) $(id).value = '';
+    for (const id of ['dlg', 'pwdlg', 'namedlg', 'recoverydlg']) { const d = $(id); if (d && d.open) d.close(); }
+    for (const id of ['fp', 'fo', 'cp0', 'cp1', 'cp2', 'pw', 'spw', 'spw2', 'recoveryInput']) $(id).value = '';
     $('lockMsg').textContent = message || 'Your vault is locked.'; $('lerr').textContent = '';
     screen('lock'); $('pw').focus();
   }
   async function refresh() {
     S.items = await invoke('list_items');
-    if (S.sel !== null && !S.items.some((i) => i.id === S.sel)) { S.sel = null; S.detail = null; S.shown = null; }
+    await performSearch(false);
+    if (S.sel !== null && !S.items.some((i) => i.id === S.sel)) { S.sel = null; S.detail = null; S.shown = null; S.recoveryCodes = null; }
     S.folders = await invoke('list_folders');
     if (S.folder !== null) {
       if (!S.folders.some((f) => f.id === S.folder)) { S.folder = null; S.files = []; S.file = null; S.preview = null; }
@@ -61,16 +74,25 @@
   function render() {
     $('nav').innerHTML = NAV.map(([k, i, l]) => `<button class="nl ${S.view === k ? 'on' : ''}" data-act="nav" data-view="${k}"><span>${i}</span><span>${l}</span></button>`).join('');
     const v = S.view; $('title').textContent = NAV.find((n) => n[0] === v)[2];
+    const subtitles = {
+      all: 'Your accounts and private notes, in one place.',
+      app: 'Sign-in details for your apps and online accounts.',
+      folder: S.folder === null ? 'Organize encrypted files into private folders.' : 'Encrypted files stored in this folder.',
+      fav: 'The accounts and notes you reach for most.',
+      note: 'Private text kept inside the encrypted vault.',
+      set: 'Security, appearance, and vault maintenance.'
+    };
+    $('subtitle').textContent = subtitles[v] || subtitles.all;
     $('q').hidden = v === 'set';
     if (v === 'set') { $('content').innerHTML = settingsHtml(); return; }
-    const q = $('q').value.trim().toLowerCase();
-    const list = S.items.filter((x) => (v === 'all' || v === 'folder' || (v === 'fav' ? x.favorite : x.kind === v)) && x.title.toLowerCase().includes(q));
+    const source = S.searchResults || S.items;
+    const list = source.filter((x) => (v === 'all' || v === 'folder' || (v === 'fav' ? x.favorite : x.kind === v)));
     const card = (x) => `<button class="card ${S.sel === x.id ? 'sel' : ''}" data-act="open" data-id="${x.id}"><div class="ico" style="background:${COLORS[x.id % 6]}">${esc(x.title[0] || '?')}</div>${x.favorite ? '<span class="fav">★</span>' : ''}<b>${esc(x.title)}</b><small>${esc(x.subtitle || ' ')}</small></button>`;
     const folders = foldersGrid();
     let h = '';
     if (v !== 'folder') {
       h += list.length ? `<div class="grid">${list.map(card).join('')}</div>`
-        : `<div class="empty">${S.items.length ? 'Nothing matches your search.' : 'Your vault is empty. Choose New item to add your first app or note.'}</div>`;
+        : `<div class="empty"><strong>${S.items.length ? 'No matching items' : 'Your vault is empty'}</strong><span>${S.items.length ? 'Try another name, username, or phrase from the notes.' : 'Choose New item to add your first app or note.'}</span></div>`;
     }
     if (v === 'all') h = (list.length ? '<div class="sec">Apps and notes</div>' : '') + h + '<div class="sec">Folders</div>' + folders;
     if (v === 'folder') h = S.folder === null ? `<div class="row end" style="margin:0 0 14px"><button class="btn pri" data-act="newFolder">New folder</button></div>${folders}` : folderPage();
@@ -96,7 +118,7 @@
     const opt = (cur, arr) => arr.map(([n, l]) => `<option value="${n}" ${cur === n ? 'selected' : ''}>${l}</option>`).join('');
     return `<div class="f"><label>Lock after inactivity</label><select class="in" style="margin:0" data-set="auto_lock_secs">${opt(S.settings.auto_lock_secs, [[60, '1 minute'], [300, '5 minutes'], [900, '15 minutes'], [0, 'Never']])}</select></div>
     <div class="f"><label>Clear clipboard after</label><select class="in" style="margin:0" data-set="clipboard_clear_secs">${opt(S.settings.clipboard_clear_secs, [[10, '10 seconds'], [20, '20 seconds'], [45, '45 seconds'], [90, '90 seconds']])}</select></div>
-    <div class="f"><label>Theme</label><div class="row"><button class="btn" data-act="theme" data-theme="light">Light</button><button class="btn" data-act="theme" data-theme="dark">Dark</button></div></div>
+    <div class="f"><label>Appearance</label><div class="row"><button class="btn" data-act="theme" data-theme="light">Light</button><button class="btn" data-act="theme" data-theme="dark">Dark</button></div><div class="note">Saved as a local display preference, not inside the vault.</div></div>
     <div class="f"><label>Master password</label><button class="btn" data-act="openPw">Change master password</button></div>
     <div class="f"><label>Vault integrity</label><button class="btn" data-act="verify">Check vault integrity</button>${verifyHtml()}</div>
     <div class="f"><label>Shortcut</label>Press <b class="mono">Ctrl + L</b> to lock immediately.</div>`;
@@ -125,7 +147,21 @@
     if (x.has_totp) h += `<div class="f"><label>Authenticator</label><div class="totp"><div class="ring"><svg width="74" height="74"><circle cx="37" cy="37" r="32" fill="none" stroke="var(--line)" stroke-width="5"/><circle id="rg" cx="37" cy="37" r="32" fill="none" stroke="var(--ac)" stroke-width="5" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="0"/></svg><div class="n" id="rn"></div></div><div><div class="code" id="cd">······</div><button class="btn sm" data-act="copy" data-field="totp">Copy code</button></div></div></div>`;
     if (x.kind === 'app') h += fld('Passkey', x.passkey ? '<span class="badge">Recorded</span>' : '<span style="color:var(--mut)">None recorded</span>');
     if (x.notes) h += fld('Notes', esc(x.notes).replace(/\n/g, '<br>'));
-    h += `<div class="row" style="margin-top:16px"><button class="btn" data-act="edit">Edit</button><button class="btn" data-act="fav">${x.favorite ? 'Remove favorite' : 'Add favorite'}</button><button class="btn" data-act="del" style="color:var(--bad)">Delete</button></div>`;
+    if (x.kind === 'app') {
+      const total = Number(x.recovery_code_count || 0);
+      const remaining = Number(x.recovery_codes_remaining || 0);
+      h += `<div class="section-heading"><div><h3>Recovery codes</h3><small>${remaining} remaining of ${total}</small></div><button class="btn sm" data-act="addRecoveryCodes">＋ Add</button></div>`;
+      if (S.recoveryCodes === null) {
+        h += total
+          ? `<div class="f"><div style="color:var(--mut);font-size:12px;margin-bottom:10px">Code values stay concealed until you choose to reveal them.</div><button class="btn" data-act="showRecoveryCodes">View recovery codes</button></div>`
+          : `<div class="f"><div style="color:var(--mut);font-size:12px">No recovery codes are stored for this account.</div></div>`;
+      } else {
+        h += S.recoveryCodes.length
+          ? `<div class="recovery-list">${S.recoveryCodes.map((row) => `<div class="recovery-row ${row.used ? 'is-used' : ''}"><span class="recovery-code">${esc(row.code)}</span><div class="recovery-row-actions">${row.used ? '<span class="used-label">Used</span>' : ''}<button class="btn sm" data-act="copyRecovery" data-index="${row.index}" aria-label="Copy recovery code">Copy</button><button class="btn sm" data-act="toggleRecovery" data-index="${row.index}">${row.used ? 'Undo' : 'Used'}</button><button class="btn sm danger" data-act="deleteRecovery" data-index="${row.index}" aria-label="Remove recovery code">×</button></div></div>`).join('')}</div><div class="row end"><button class="btn sm" data-act="hideRecoveryCodes">Hide codes</button></div>`
+          : `<div class="f"><div style="color:var(--mut);font-size:12px">No recovery codes are stored for this account.</div><button class="btn sm" data-act="hideRecoveryCodes">Hide codes</button></div>`;
+      }
+    }
+    h += `<div class="detail-actions"><button class="btn" data-act="edit">Edit</button><button class="btn" data-act="fav">${x.favorite ? 'Remove favorite' : 'Add favorite'}</button><button class="btn danger" data-act="del">Delete</button></div>`;
     d.innerHTML = h;
     if (x.has_totp) { tick(); S.totpTimer = setInterval(tick, 1000); }
   }
@@ -141,15 +177,15 @@
   // ---- actions (single delegated listener: the CSP forbids inline handlers) ---------------------------
   const A = {
     async nav(d) { S.view = d.view; render(); },
-    async open(d) { S.file = null; S.preview = null; S.sel = Number(d.id); S.shown = null; S.detail = await invoke('get_item', { id: S.sel }); render(); renderDetail(); },
-    async close() { S.sel = null; S.detail = null; S.shown = null; render(); renderDetail(); },
+    async open(d) { S.file = null; S.preview = null; S.sel = Number(d.id); S.shown = null; S.recoveryCodes = null; S.detail = await invoke('get_item', { id: S.sel }); render(); renderDetail(); },
+    async close() { S.sel = null; S.detail = null; S.shown = null; S.recoveryCodes = null; render(); renderDetail(); },
     async reveal() { S.shown = await invoke('reveal_password', { id: S.sel }); renderDetail(); },
     async hide() { S.shown = null; renderDetail(); },
     async copy(d) { await invoke('copy_field', { id: S.sel, field: d.field }); toast(`Copied. The clipboard clears in ${S.settings.clipboard_clear_secs} seconds if unchanged.`); },
     async fav() { await invoke('set_favorite', { id: S.sel, favorite: !S.detail.favorite }); await refresh(); toast('Favorites updated'); },
     async del() { if (!confirm(`Delete "${S.detail.title}" from the vault? This cannot be undone.`)) return; await invoke('delete_item', { id: S.sel }); S.sel = null; S.detail = null; S.shown = null; await refresh(); renderDetail(); toast('Deleted'); },
     async lock() { await invoke('vault_lock'); resetUi('Your vault is locked.'); },
-    async theme(d) { document.documentElement.dataset.theme = d.theme; },
+    async theme(d) { applyTheme(d.theme); },
     async newItem() { openItemDialog(null); },
     async edit() { openItemDialog(S.detail); },
     async gen() { $('fp').value = await invoke('generate_password', { length: 20 }); strength($('fp').value, 'fbar'); },
@@ -167,24 +203,79 @@
       await invoke('delete_folder', { id: S.folder }); S.folder = null; S.files = []; S.file = null; S.preview = null; await refresh(); renderDetail(); toast('Folder deleted');
     },
     async importFile() { const v = await invoke('import_file', { folderId: S.folder }); if (v) { toast('Encrypted and added to the folder'); await refresh(); } },
-    async openFile(d) { S.file = S.files.find((x) => x.id === Number(d.id)) || null; S.preview = null; S.sel = null; S.detail = null; render(); renderDetail(); },
+    async openFile(d) { S.file = S.files.find((x) => x.id === Number(d.id)) || null; S.preview = null; S.sel = null; S.detail = null; S.recoveryCodes = null; render(); renderDetail(); },
     async closeFile() { S.file = null; S.preview = null; render(); renderDetail(); },
     async previewFile() { S.preview = await invoke('preview_file', { id: S.file.id }); renderDetail(); },
     async exportFile() { if (!confirm('This saves an UNENCRYPTED copy of the file where you choose. Continue?')) return; if (await invoke('export_file', { id: S.file.id })) toast('Exported'); },
     async deleteFile() { if (!confirm(`Delete "${S.file.name}" from the vault? This cannot be undone.`)) return; await invoke('delete_file', { id: S.file.id }); S.file = null; S.preview = null; await refresh(); renderDetail(); toast('Deleted'); },
     async verify() { toast('Checking every encrypted file…'); S.verify = await invoke('verify_vault'); render(); },
+    async showRecoveryCodes() { S.recoveryCodes = await invoke('get_recovery_codes', { id: S.sel }); renderDetail(); },
+    async hideRecoveryCodes() { S.recoveryCodes = null; renderDetail(); },
+    async addRecoveryCodes() {
+      $('recoveryInput').value = ''; $('recoveryErr').textContent = '';
+      $('recoverydlg').showModal(); $('recoveryInput').focus();
+    },
+    async closeRecoveryDlg() {
+      $('recoveryInput').value = ''; $('recoveryErr').textContent = '';
+      $('recoverydlg').close();
+    },
+    async copyRecovery(d) {
+      await invoke('copy_field', { id: S.sel, field: 'recovery:' + Number(d.index) });
+      toast(`Copied. The clipboard clears in ${S.settings.clipboard_clear_secs} seconds if unchanged.`);
+    },
+    async toggleRecovery(d) {
+      const index = Number(d.index);
+      const current = S.recoveryCodes && S.recoveryCodes.find((row) => row.index === index);
+      if (!current) return;
+      await invoke('set_recovery_code_used', { id: S.sel, index, used: !current.used });
+      S.recoveryCodes = null;
+      await refresh();
+      S.recoveryCodes = await invoke('get_recovery_codes', { id: S.sel });
+      renderDetail();
+      toast(current.used ? 'Recovery code marked unused' : 'Recovery code marked used');
+    },
+    async deleteRecovery(d) {
+      const index = Number(d.index);
+      if (!confirm('Remove this recovery code from the vault? This cannot be undone.')) return;
+      const keepOpen = S.recoveryCodes !== null;
+      await invoke('delete_recovery_code', { id: S.sel, index });
+      S.recoveryCodes = null;
+      await refresh();
+      if (keepOpen && S.sel !== null) S.recoveryCodes = await invoke('get_recovery_codes', { id: S.sel });
+      renderDetail();
+      toast('Recovery code removed');
+    },
   };
   document.addEventListener('click', (e) => { const el = e.target.closest('[data-act]'); if (!el || !A[el.dataset.act]) return; guarded(() => A[el.dataset.act](el.dataset)); });
   document.addEventListener('change', (e) => {
     const key = e.target.dataset && e.target.dataset.set; if (!key) return;
     guarded(async () => { S.settings = { ...S.settings, [key]: Number(e.target.value) }; await invoke('set_settings', { settings: S.settings }); toast('Setting saved'); });
   });
-  $('q').addEventListener('input', render);
+  let searchDebounce = 0;
+  async function performSearch(shouldRender = true) {
+    const seq = ++S.searchSeq;
+    try {
+      const results = await invoke('search_items', { query: $('q').value.trim() });
+      if (seq !== S.searchSeq) return;
+      S.searchResults = results;
+      if (shouldRender) render();
+    } catch (err) {
+      if (seq !== S.searchSeq) return;
+      S.searchResults = S.items;
+      if (shouldRender) render();
+      toast(errText(err));
+    }
+  }
+  $('q').addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => { guarded(() => performSearch(true)); }, 140);
+  });
   $('spw').addEventListener('input', () => strength($('spw').value, 'sbar'));
   $('fp').addEventListener('input', () => strength($('fp').value, 'fbar'));
   $('fk').addEventListener('change', () => { $('appFields').hidden = $('fk').value === 'note'; });
 
   function openItemDialog(item) {
+    S.recoveryCodes = null; S.shown = null;
     $('dlgTitle').textContent = item ? 'Edit item' : 'New item'; $('itemForm').dataset.id = item ? String(item.id) : '';
     $('fk').value = item ? item.kind : 'app'; $('fk').disabled = !!item; $('appFields').hidden = $('fk').value === 'note';
     $('ft').value = item ? item.title : ''; $('fu').value = item ? item.username : '';
@@ -231,6 +322,26 @@
       $('namedlg').close(); await refresh(); toast('Saved');
     });
   });
+  $('recoveryForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    guarded(async () => {
+      const codes = $('recoveryInput').value.split(/\r?\n/).map((code) => code.trim()).filter(Boolean);
+      $('recoveryErr').textContent = '';
+      if (!codes.length) { $('recoveryErr').textContent = 'Enter at least one recovery code.'; return; }
+      const keepOpen = S.recoveryCodes !== null;
+      try {
+        const added = await invoke('add_recovery_codes', { id: S.sel, codes });
+        $('recoveryInput').value = ''; $('recoverydlg').close();
+        S.recoveryCodes = null;
+        await refresh();
+        if (keepOpen && S.sel !== null) S.recoveryCodes = await invoke('get_recovery_codes', { id: S.sel });
+        renderDetail();
+        toast(`${added} recovery code${added === 1 ? '' : 's'} saved`);
+      } catch (err) {
+        $('recoveryErr').textContent = errText(err);
+      }
+    });
+  });
   $('pwForm').addEventListener('submit', (e) => {
     e.preventDefault(); $('perr').textContent = '';
     if ($('cp1').value !== $('cp2').value) { $('perr').textContent = 'The new passwords do not match.'; return; }
@@ -240,7 +351,17 @@
   });
 
   // Ctrl+L locks; user activity keeps the Rust inactivity timer alive (throttled).
-  document.addEventListener('keydown', (e) => { if (e.ctrlKey && e.key.toLowerCase() === 'l' && !$('app').hidden) { e.preventDefault(); A.lock().catch(() => {}); } });
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.key.toLowerCase() === 'l' && !$('app').hidden) {
+      e.preventDefault(); A.lock().catch(() => {});
+    } else if (e.ctrlKey && e.key.toLowerCase() === 'k' && !$('app').hidden) {
+      e.preventDefault();
+      if (S.view === 'set') { S.view = 'all'; render(); }
+      $('q').focus(); $('q').select();
+    } else if (e.key === 'Escape' && $('recoverydlg').open) {
+      $('recoveryInput').value = '';
+    }
+  });
   let lastTouch = 0;
   const touch = () => { const n = Date.now(); if (!$('app').hidden && n - lastTouch > 5000) { lastTouch = n; invoke('touch').catch(() => {}); } };
   for (const ev of ['mousemove', 'keydown', 'click']) document.addEventListener(ev, touch, { passive: true });
