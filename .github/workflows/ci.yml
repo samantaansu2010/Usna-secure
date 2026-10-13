@@ -14,6 +14,13 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --workspace --all-features
+      - name: Verify desktop backend (Windows)
+        if: runner.os == 'Windows'
+        working-directory: src-tauri
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo test --locked --workspace
   audit:
     runs-on: ubuntu-latest
     steps:
