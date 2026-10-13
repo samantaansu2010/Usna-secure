@@ -417,7 +417,8 @@ pub async fn export_accounts(app: AppHandle, state: State<'_, AppState>) -> Resu
         return Ok(false);
     };
     let dest = dest.into_path().map_err(|e| format!("Cannot use that location: {e}"))?;
-    let bytes = with_session(state.inner(), |s| {    let bytes = with_session(state.inner(), |s| {
+
+    let bytes = with_session(state.inner(), |s| {
         if s.model.items.len() > 1000 {
             return Err("Account export supports at most 1,000 entries.".into());
         }
@@ -439,9 +440,6 @@ pub async fn export_accounts(app: AppHandle, state: State<'_, AppState>) -> Resu
         serde_json::to_vec_pretty(&document).map(Zeroizing::new)
             .map_err(|_| "Could not serialize account data for export.".to_string())
     })?;
-    if bytes.len() as u64 > MAX_ACCOUNT_EXPORT_BYTES {
-        return Err("The account export exceeds the 10 MiB size limit.".into());
-    }
 
     if bytes.len() as u64 > MAX_ACCOUNT_EXPORT_BYTES {
         return Err("The account export exceeds the 10 MiB size limit.".into());
