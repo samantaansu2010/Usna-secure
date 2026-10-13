@@ -409,7 +409,15 @@ pub fn list_items(state: State<'_, AppState>) -> Result<Vec<ItemSummary>, String
 /// The resulting file contains account secrets and must be protected accordingly.
 #[tauri::command]
 pub async fn export_accounts(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
-    let bytes = with_session(state.inner(), |s| {
+    // Ask for the destination first so a cancel does not serialize secrets into a temporary buffer.
+    let Some(dest) = app.dialog().file()
+        .set_file_name("usna-secure-accounts.json")
+        .blocking_save_file()
+    else {
+        return Ok(false);
+    };
+    let dest = dest.into_path().map_err(|e| format!("Cannot use that location: {e}"))?;
+    let bytes = with_session(state.inner(), |s| {    let bytes = with_session(state.inner(), |s| {
         if s.model.items.len() > 1000 {
             return Err("Account export supports at most 1,000 entries.".into());
         }
@@ -435,13 +443,9 @@ pub async fn export_accounts(app: AppHandle, state: State<'_, AppState>) -> Resu
         return Err("The account export exceeds the 10 MiB size limit.".into());
     }
 
-    let Some(dest) = app.dialog().file()
-        .set_file_name("usna-secure-accounts.json")
-        .blocking_save_file()
-    else {
-        return Ok(false);
-    };
-    let dest = dest.into_path().map_err(|e| format!("Cannot use that location: {e}"))?;
+    if bytes.len() as u64 > MAX_ACCOUNT_EXPORT_BYTES {
+        return Err("The account export exceeds the 10 MiB size limit.".into());
+    }
     let write_result = (|| -> std::io::Result<()> {
         let mut output = File::create(&dest)?;
         output.write_all(bytes.as_slice())?;
