@@ -1178,6 +1178,36 @@ mod tests {
     }
 
     #[test]
+    fn failed_bulk_account_import_restores_the_committed_snapshot() {
+        let b = TestBackend::default();
+        let mut s = make_session(&b);
+        let before = live(&s);
+        let record = || PortableItem {
+            kind: "app".into(),
+            title: "Imported account".into(),
+            favorite: true,
+            username: "user@example.test".into(),
+            password: "imported-secret".into(),
+            totp_secret: String::new(),
+            passkey: false,
+            notes: "imported note".into(),
+            recovery_codes: vec![RecoveryCode { code: "recovery-secret".into(), used: false }],
+        };
+
+        b.fail(true);
+        assert!(s.import_accounts(vec![record()]).is_err());
+        assert_eq!(live(&s), before, "a failed bulk save must remove every imported record");
+        assert_eq!(s.model.next_id, 1, "a failed bulk save must not consume IDs");
+        assert_consistent(&s, &b);
+
+        b.fail(false);
+        assert_eq!(s.import_accounts(vec![record()]).unwrap(), 1);
+        assert_eq!(s.model.items.len(), 1);
+        assert_eq!(s.model.items[0].recovery_codes[0].code, "recovery-secret");
+        assert_consistent(&s, &b);
+    }
+
+    #[test]
     fn failed_recovery_code_mutations_restore_the_committed_snapshot() {
         let b = TestBackend::default();
         let mut s = make_session(&b);
