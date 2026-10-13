@@ -523,7 +523,9 @@ impl Model {
 
         // Validate and normalize every record before touching the current model.
         for record in &mut records {
-            record.title = record.title.trim().to_string();
+            let normalized_title = record.title.trim().to_string();
+            record.title.zeroize();
+            record.title = normalized_title;
             if record.title.is_empty() || record.title.chars().count() > 256 {
                 return Err("Every imported entry must have a name of 1 to 256 characters.".into());
             }
@@ -543,7 +545,9 @@ impl Model {
                 return Err("An imported account contains more than 1,000 recovery codes.".into());
             }
             for code in &mut record.recovery_codes {
-                code.code = code.code.trim().to_string();
+                let normalized_code = code.code.trim().to_string();
+                code.code.zeroize();
+                code.code = normalized_code;
                 if code.code.is_empty() || code.code.chars().count() > 256 {
                     return Err("Every recovery code must contain 1 to 256 characters.".into());
                 }
