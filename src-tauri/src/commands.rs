@@ -58,6 +58,9 @@ impl Drop for Session {
             item.totp_secret.zeroize();
             item.username.zeroize();
             item.notes.zeroize();
+            for code in &mut item.recovery_codes {
+                code.code.zeroize();
+            }
         }
     }
 }
@@ -103,6 +106,15 @@ impl Session {
     }
     fn delete_item(&mut self, id: u64) -> Result<(), String> {
         self.commit(|m| m.delete(id).map(|u| ((), u)))
+    }
+    fn add_recovery_codes(&mut self, id: u64, codes: Vec<String>) -> Result<usize, String> {
+        self.commit(|m| m.add_recovery_codes(id, codes))
+    }
+    fn set_recovery_code_used(&mut self, id: u64, index: usize, used: bool) -> Result<(), String> {
+        self.commit(|m| m.set_recovery_code_used(id, index, used).map(|u| ((), u)))
+    }
+    fn delete_recovery_code(&mut self, id: u64, index: usize) -> Result<(), String> {
+        self.commit(|m| m.delete_recovery_code(id, index).map(|u| ((), u)))
     }
     fn set_favorite(&mut self, id: u64, favorite: bool) -> Result<(), String> {
         self.commit(|m| m.set_favorite(id, favorite).map(|u| ((), u)))
@@ -192,6 +204,19 @@ pub struct Status {
 pub struct TotpNow {
     code: String,
     remaining: u64,
+}
+
+#[derive(Serialize)]
+pub struct RecoveryCodeView {
+    index: usize,
+    code: String,
+    used: bool,
+}
+
+impl Drop for RecoveryCodeView {
+    fn drop(&mut self) {
+        self.code.zeroize();
+    }
 }
 
 fn store_for(app: &AppHandle) -> Result<Store, String> {
@@ -373,6 +398,51 @@ pub fn list_items(state: State<'_, AppState>) -> Result<Vec<ItemSummary>, String
     with_session(state.inner(), |s| Ok(s.model.items.iter().map(|i| i.summary()).collect()))
 }
 
+/// Search non-secret metadata in Rust. Passwords, TOTP seeds, recovery codes and file contents are excluded.
+#[tauri::command]
+pub fn search_items(state: State<'_, AppState>, query: String) -> Result<Vec<ItemSummary>, String> {
+    let needle = query.trim().to_lowercase();
+    with_session(state.inner(), |s| {
+        Ok(s.model.items.iter().filter(|item| {
+            needle.is_empty()
+                || item.title.to_lowercase().contains(&needle)
+                || item.username.to_lowercase().contains(&needle)
+                || item.notes.to_lowercase().contains(&needle)
+        }).map(|item| item.summary()).collect())
+    })
+}
+
+/// Recovery-code values are returned only when the user explicitly opens a specific account's panel.
+#[tauri::command]
+pub fn get_recovery_codes(state: State<'_, AppState>, id: u64) -> Result<Vec<RecoveryCodeView>, String> {
+    with_session(state.inner(), |s| {
+        let item = s.model.find(id)?;
+        if item.kind != "app" {
+            return Err("Recovery codes can only be attached to an app or account.".into());
+        }
+        Ok(item.recovery_codes.iter().enumerate().map(|(index, code)| RecoveryCodeView {
+            index,
+            code: code.code.clone(),
+            used: code.used,
+        }).collect())
+    })
+}
+
+#[tauri::command]
+pub fn add_recovery_codes(state: State<'_, AppState>, id: u64, codes: Vec<String>) -> Result<usize, String> {
+    with_session(state.inner(), |s| s.add_recovery_codes(id, codes))
+}
+
+#[tauri::command]
+pub fn set_recovery_code_used(state: State<'_, AppState>, id: u64, index: usize, used: bool) -> Result<(), String> {
+    with_session(state.inner(), |s| s.set_recovery_code_used(id, index, used))
+}
+
+#[tauri::command]
+pub fn delete_recovery_code(state: State<'_, AppState>, id: u64, index: usize) -> Result<(), String> {
+    with_session(state.inner(), |s| s.delete_recovery_code(id, index))
+}
+
 #[tauri::command]
 pub fn get_item(state: State<'_, AppState>, id: u64) -> Result<ItemView, String> {
     with_session(state.inner(), |s| Ok(s.model.find(id)?.view()))
@@ -432,6 +502,12 @@ pub fn copy_field(
             "password" => item.password.clone(),
             "username" => item.username.clone(),
             "totp" => current_code(&item.totp_secret)?.0,
+            recovery if recovery.starts_with("recovery:") => {
+                let index = recovery["recovery:".len()..].parse::<usize>()
+                    .map_err(|_| "Invalid recovery-code index.".to_string())?;
+                item.recovery_codes.get(index)
+                    .ok_or_else(|| "That recovery code no longer exists.".to_string())?.code.clone()
+            }
             _ => return Err("Unknown field.".to_string()),
         };
         Ok((Zeroizing::new(v), s.model.settings.clipboard_clear_secs))
