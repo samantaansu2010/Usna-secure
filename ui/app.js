@@ -183,7 +183,7 @@
     async hide() { S.shown = null; renderDetail(); },
     async copy(d) { await invoke('copy_field', { id: S.sel, field: d.field }); toast(`Copied. The clipboard clears in ${S.settings.clipboard_clear_secs} seconds if unchanged.`); },
     async fav() { await invoke('set_favorite', { id: S.sel, favorite: !S.detail.favorite }); await refresh(); toast('Favorites updated'); },
-    async del() { if (!confirm(`Delete "${S.detail.title}" from the vault? This cannot be undone.`)) return; await invoke('delete_item', { id: S.sel }); S.sel = null; S.detail = null; S.shown = null; await refresh(); renderDetail(); toast('Deleted'); },
+    async del() { if (!confirm(`Delete "${S.detail.title}" from the vault? This cannot be undone.`)) return; await invoke('delete_item', { id: S.sel }); S.sel = null; S.detail = null; S.shown = null; S.recoveryCodes = null; await refresh(); renderDetail(); toast('Deleted'); },
     async lock() { await invoke('vault_lock'); resetUi('Your vault is locked.'); },
     async theme(d) { applyTheme(d.theme); },
     async newItem() { openItemDialog(null); },
@@ -192,8 +192,8 @@
     async closeDlg() { $('dlg').close(); },
     async openPw() { $('perr').textContent = ''; $('pwdlg').showModal(); $('cp0').focus(); },
     async closePw() { $('pwdlg').close(); },
-    async openFolder(d) { S.folder = Number(d.id); S.view = 'folder'; S.file = null; S.preview = null; S.sel = null; S.detail = null; S.files = await invoke('list_files', { folderId: S.folder }); render(); renderDetail(); },
-    async backFolders() { S.folder = null; S.files = []; S.file = null; S.preview = null; render(); renderDetail(); },
+    async openFolder(d) { S.folder = Number(d.id); S.view = 'folder'; S.file = null; S.preview = null; S.sel = null; S.detail = null; S.recoveryCodes = null; S.files = await invoke('list_files', { folderId: S.folder }); render(); renderDetail(); },
+    async backFolders() { S.folder = null; S.files = []; S.file = null; S.preview = null; S.recoveryCodes = null; render(); renderDetail(); },
     async newFolder() { S.nameMode = 'new'; $('nameTitle').textContent = 'New folder'; $('nm').value = ''; $('nerr').textContent = ''; $('namedlg').showModal(); $('nm').focus(); },
     async renameFolder() { const f = S.folders.find((x) => x.id === S.folder); S.nameMode = 'rename'; $('nameTitle').textContent = 'Rename folder'; $('nm').value = f ? f.name : ''; $('nerr').textContent = ''; $('namedlg').showModal(); $('nm').select(); },
     async closeName() { $('namedlg').close(); },
@@ -261,7 +261,7 @@
       if (shouldRender) render();
     } catch (err) {
       if (seq !== S.searchSeq) return;
-      S.searchResults = S.items;
+      S.searchResults = $('q').value.trim() ? [] : S.items;
       if (shouldRender) render();
       toast(errText(err));
     }
@@ -276,6 +276,7 @@
 
   function openItemDialog(item) {
     S.recoveryCodes = null; S.shown = null;
+    renderDetail(); // Remove previously revealed values from the detail DOM before editing.
     $('dlgTitle').textContent = item ? 'Edit item' : 'New item'; $('itemForm').dataset.id = item ? String(item.id) : '';
     $('fk').value = item ? item.kind : 'app'; $('fk').disabled = !!item; $('appFields').hidden = $('fk').value === 'note';
     $('ft').value = item ? item.title : ''; $('fu').value = item ? item.username : '';
