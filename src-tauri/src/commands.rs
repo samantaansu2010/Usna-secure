@@ -403,12 +403,8 @@ pub fn list_items(state: State<'_, AppState>) -> Result<Vec<ItemSummary>, String
 pub fn search_items(state: State<'_, AppState>, query: String) -> Result<Vec<ItemSummary>, String> {
     let needle = query.trim().to_lowercase();
     with_session(state.inner(), |s| {
-        Ok(s.model.items.iter().filter(|item| {
-            needle.is_empty()
-                || item.title.to_lowercase().contains(&needle)
-                || item.username.to_lowercase().contains(&needle)
-                || item.notes.to_lowercase().contains(&needle)
-        }).map(|item| item.summary()).collect())
+        Ok(s.model.items.iter().filter(|item| item.matches_search(&needle))
+            .map(|item| item.summary()).collect())
     })
 }
 
