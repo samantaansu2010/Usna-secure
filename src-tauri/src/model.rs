@@ -2,7 +2,7 @@
 //! Serialized as JSON and sealed inside the vault snapshot; nothing here is ever written unencrypted.
 
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::totp;
 
@@ -396,22 +396,24 @@ impl Model {
 
     /// Add recovery codes to an app/account. Validation completes before mutation.
     pub fn add_recovery_codes(&mut self, id: u64, codes: Vec<String>) -> Result<(usize, Undo), String> {
+        // Best-effort cleanup of the IPC inputs and partially validated batch on every exit path.
+        let codes = Zeroizing::new(codes);
         if codes.is_empty() {
             return Err("Enter at least one recovery code.".into());
         }
         if codes.len() > 100 {
             return Err("Add no more than 100 recovery codes at a time.".into());
         }
-        let mut clean: Vec<String> = Vec::with_capacity(codes.len());
-        for raw in codes {
-            let code = raw.trim().to_string();
+        let mut clean = Zeroizing::new(Vec::<String>::with_capacity(codes.len()));
+        for raw in codes.iter() {
+            let code = Zeroizing::new(raw.trim().to_string());
             if code.is_empty() || code.chars().count() > 256 {
                 return Err("Each recovery code must contain 1 to 256 characters.".into());
             }
-            if clean.iter().any(|existing| existing == &code) {
+            if clean.iter().any(|existing| existing.as_str() == code.as_str()) {
                 return Err("The recovery-code list contains duplicates.".into());
             }
-            clean.push(code);
+            clean.push(code.to_string());
         }
 
         let current = self.find(id)?;
@@ -421,14 +423,15 @@ impl Model {
         if current.recovery_codes.len() + clean.len() > 1000 {
             return Err("An account can store at most 1,000 recovery codes.".into());
         }
-        if clean.iter().any(|new_code| current.recovery_codes.iter().any(|old| old.code == *new_code)) {
+        if clean.iter().any(|new_code| current.recovery_codes.iter().any(|old| old.code.as_str() == new_code.as_str())) {
             return Err("One or more recovery codes already exist for this account.".into());
         }
 
         let old = current.clone();
         let item = self.find_mut(id)?;
         let added = clean.len();
-        item.recovery_codes.extend(clean.into_iter().map(|code| RecoveryCode { code, used: false }));
+        let persistent_codes = std::mem::take(&mut *clean);
+        item.recovery_codes.extend(persistent_codes.into_iter().map(|code| RecoveryCode { code, used: false }));
         Ok((added, Undo::RestoreItem(old)))
     }
 
