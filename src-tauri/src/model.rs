@@ -62,7 +62,6 @@ pub struct AccountExportDocument {
 
 /// The portable format intentionally excludes internal item IDs and file metadata.
 #[derive(Serialize, Default)]
-#[serde(default)]
 pub struct PortableItem {
     pub kind: String,
     pub title: String,
