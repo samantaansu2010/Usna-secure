@@ -1,7 +1,8 @@
 # Desktop App (Tauri 2 shell): status, run instructions, honest limits
 
-**Status: written, not yet compiled or run.** Like milestone 1 before its first local run, nothing here
-has been built. Expect compile errors on the first try and report them.
+**Status: early build; not security-audited.** The project owner previously built and ran the Windows app and installer.
+The `feature/vault-redesign` branch adds significant UI, search, recovery-code, and account import/export changes;
+verify the latest GitHub Actions result and rebuild locally before relying on those changes.
 
 ## What it is
 `src-tauri/` (Rust, Tauri 2) is a thin command layer over `usna-vault-core`; `ui/` is the interface. It is a
@@ -19,7 +20,13 @@ separate Cargo workspace with its own lockfile, so the verified core pipeline ne
   file object (all chunks authenticated) and reports unreferenced objects.
 * Unlock back-off: after 3 wrong attempts the response is delayed 1, 2, 4, then 8 seconds (UI friction only).
 * Items: apps and secure notes with username, password, optional TOTP secret, passkey *record*, notes; search,
-  favorites, edit, delete. Everything is sealed into the vault snapshot after each change.
+  favorites, edit, delete. Search runs in Rust over titles, usernames, and notes, and never returns secrets in its result list.
+* Per-account recovery codes are stored inside the encrypted snapshot. Counts appear in the item view; code values
+  are returned to the WebView only after the user explicitly opens that account's recovery-code panel. Each code
+  can be copied, marked used/unused, or removed.
+* Account JSON import/export uses a versioned format and validates a full import batch before committing it once.
+  Import assigns new local IDs and does not overwrite existing entries. **JSON export is plaintext** and includes
+  passwords, notes, authenticator seeds, and recovery codes; the UI requires confirmation before export/import.
 * Live TOTP code and countdown (computed in Rust, RFC 6238 tested), password generator (Rust, no modulo bias),
   copy with timed clipboard clearing (Rust, cleared only if the clipboard still holds our value),
   change master password (re-wraps the same vault key).
@@ -37,20 +44,21 @@ an import writes the object first and the snapshot second and removes the object
 a password change writes the header first and adopts it in memory second.
 
 All of this logic lives on `Session` behind a small `Backend` trait (`write_db`, `write_header`, `read_*`, `remove_object`).
-`Store` is the real backend; the tests use one that can fail on demand. The tests (unrun) check, for each of
-create/rename/delete folder, delete file, add file, every item operation, settings and change-password: the live model is
-byte-identical to before the failed attempt, the on-disk snapshot decrypts to exactly the live model, the revision did not
-advance, no object was deleted, and a later successful save is correct (for example, a failed folder deletion does not make
-its file records vanish from a later save).
+`Store` is the real backend; the tests use one that can fail on demand. Failure-injection tests check that failed mutations
+restore the live model, retain the last committed snapshot and revision, and do not remove file objects before commit.
+Additional tests cover recovery-code changes and rollback, metadata-only search, legacy-item deserialization without a
+recovery-code field, whole-batch account import validation, and failed-import rollback. Windows CI is configured to run
+the Tauri backend's formatter, Clippy, and tests; confirm the current branch's run before treating it as verified.
 
 Known limit: the integrity check is a point-in-time report. Header and snapshot are checked under the session lock; file
 objects are verified outside it, so a delete that happens *during* a scan can make an object look unreferenced. Run it while idle.
 
 ## The command boundary (what the UI can and cannot do)
-The UI receives no keys. `list_items` and `get_item` return no secrets. `reveal_password` is the only command
-that returns a secret, and only when the user presses Show. Copy happens in Rust. See
-`src-tauri/src/commands.rs`. The CSP forbids inline scripts, remote origins and `eval`; no fs, shell, http or opener
-plugin is enabled.
+The UI receives no keys. `list_items`, search results, and ordinary account counts do not contain secret values.
+`reveal_password` returns a password only on an explicit Show action; `get_recovery_codes` returns code values only
+when the user explicitly opens a selected account's recovery-code panel. Copying passwords, TOTP values and recovery
+codes happens in Rust. Account JSON export is a separate explicit plaintext-file action. See `src-tauri/src/commands.rs`.
+The CSP forbids inline scripts, remote origins and `eval`; no fs, shell, http or opener plugin is enabled for the WebView.
 
 ## Run it (PowerShell, repo root)
 ```
@@ -68,7 +76,7 @@ Needs the WebView2 runtime (preinstalled on current Windows 10/11). Vault data l
 | Frontend | Plain HTML/CSS/JS, not React/TypeScript. No Node toolchain to install or break; the security-relevant boundary (Rust commands) is unchanged | Port to React + TS when the UI stabilizes |
 | Storage | `store.rs`: temp file + flush + rename; instance lock; leftover cleanup; integrity check. **Still missing:** Windows write-through rename (needs `unsafe` FFI, which this project forbids; a safe route is open), full crash-recovery table for rotation (the app never rotates keys) | Milestone 3 |
 | Data model | Simplified JSON model, not the full DATA_MODEL schema. Decrypted strings live in ordinary `String`s while unlocked and are wiped best-effort on lock | Milestone 4 (`Zeroizing` types) |
-| Files and folders | Implemented but **uncompiled**. No video/PDF preview (export only), no `usna://` streaming protocol, no file-key rotation, no drag-and-drop, no moving files between folders, no import of whole folders | Milestone 6 |
+| Files and folders | Built in the baseline Windows app. No video/PDF preview (export only), no `usna://` streaming protocol, no file-key rotation, no drag-and-drop, no moving files between folders, no import of whole folders | Milestone 6 |
 | Backups | **Not implemented** (`.usnabak` is specified, not built) | Milestone 3 |
 | Vault-key rotation | Core supports it; the app does not expose it (needs the milestone-3 two-file commit and recovery) | Milestone 3 |
 | Passkeys | A record flag only. The app does not act as a passkey authenticator | Beyond milestone 8 |
@@ -76,10 +84,12 @@ Needs the WebView2 runtime (preinstalled on current Windows 10/11). Vault data l
 | Unlock attempts | UI back-off added (1, 2, 4, 8 s after 3 failures). Offline guessing is bounded by Argon2id cost either way (docs/THREAT_MODEL.md T4) | done |
 | Memory/crash dumps | No `VirtualLock`, no dump exclusion yet | Milestone 7 |
 | TOTP crate | Own 15-line RFC 4226 truncation over RustCrypto HMAC (the documented fallback), not `totp-rs` | Reconsider at M4 gate |
-| Rust version | The app needs **Rust 1.89 or newer** (`File::try_lock` for the instance lock); the core still declares 1.85 | Pin after first green run |
-| New dependency | `tauri-plugin-dialog` 2 (native open/save dialogs, invoked from Rust only; no dialog permission is granted to the WebView). Name and API not yet checked against the crate | `cargo generate-lockfile` will say |
-| Crate/feature names | `tauri` 2, `arboard` 3 with `default-features = false`, `hmac` 0.12, `sha1` 0.10 were **not** checked against their manifests | `cargo generate-lockfile` will say |
+| Rust version | The app needs **Rust 1.89 or newer** (`File::try_lock` for the instance lock); the core still declares 1.85 | Keep the core and Tauri toolchains separate unless the workspace layout changes |
+| Native dialogs | `tauri-plugin-dialog` 2 provides native open/save dialogs; the frontend has no direct filesystem permission | Keep all filesystem access in Rust |
+| Dependencies | The Tauri, clipboard, crypto, and dialog dependencies are recorded in the app's separate lockfile | Run `cargo test --locked` and strict Clippy after dependency changes |
 
 ## Not claimed
-Not audited, not production-ready, and not "unhackable". It is an early build of an offline vault whose
-cryptographic core has a test suite you have run and whose application layer has not yet been compiled.
+Not independently audited, not production-ready, and not "unhackable". The Windows app baseline has been built and
+tested by the project owner; this redesign branch still requires its current CI run and a local installer/build check.
+Recovery-code values are visible in WebView memory when explicitly revealed, and best-effort zeroization cannot erase
+copies held by the OS, WebView internals, pagefile, crash dumps, or earlier plaintext JSON exports.
