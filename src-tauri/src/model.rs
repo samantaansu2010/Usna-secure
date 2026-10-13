@@ -51,6 +51,44 @@ impl RecoveryCode {
     }
 }
 
+/// Portable account data used by explicit JSON import/export. Export files are plaintext, not vault snapshots.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct AccountExportDocument {
+    pub format: String,
+    pub version: u32,
+    pub items: Vec<PortableItem>,
+}
+
+/// The portable format intentionally excludes internal item IDs and file metadata.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct PortableItem {
+    pub kind: String,
+    pub title: String,
+    pub favorite: bool,
+    pub username: String,
+    pub password: String,
+    pub totp_secret: String,
+    pub passkey: bool,
+    pub notes: String,
+    pub recovery_codes: Vec<RecoveryCode>,
+}
+
+impl Drop for PortableItem {
+    fn drop(&mut self) {
+        self.kind.zeroize();
+        self.title.zeroize();
+        self.username.zeroize();
+        self.password.zeroize();
+        self.totp_secret.zeroize();
+        self.notes.zeroize();
+        for code in &mut self.recovery_codes {
+            code.wipe();
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct Folder {
@@ -239,6 +277,7 @@ pub enum Undo {
     PopItem { id: u64, next_id: u64 },
     RestoreItem(Item),
     ReinsertItem { index: usize, item: Item },
+    RemoveImportedItems { ids: Vec<u64>, next_id: u64 },
     RestoreRecoveryCode { item_id: u64, index: usize, code: RecoveryCode },
     Favorite { id: u64, old: bool },
     PopFolder { id: u64, next_folder_id: u64 },
@@ -297,6 +336,18 @@ impl Model {
             Undo::ReinsertItem { index, item } => {
                 let at = index.min(self.items.len());
                 self.items.insert(at, item);
+            }
+            Undo::RemoveImportedItems { ids, next_id } => {
+                let mut kept = Vec::with_capacity(self.items.len());
+                for mut item in std::mem::take(&mut self.items) {
+                    if ids.contains(&item.id) {
+                        wipe_item(&mut item);
+                    } else {
+                        kept.push(item);
+                    }
+                }
+                self.items = kept;
+                self.next_id = next_id;
             }
             Undo::RestoreRecoveryCode { item_id, index, mut code } => {
                 if let Some(item) = self.items.iter_mut().find(|item| item.id == item_id) {
@@ -459,6 +510,74 @@ impl Model {
         }
         let code = item.recovery_codes.remove(index);
         Ok(Undo::RestoreRecoveryCode { item_id: id, index, code })
+    }
+
+    /// Import an entire validated account batch as new entries and save it with one snapshot commit.
+    pub fn import_accounts(&mut self, mut records: Vec<PortableItem>) -> Result<(usize, Undo), String> {
+        if records.is_empty() {
+            return Err("The export contains no accounts to import.".into());
+        }
+        if records.len() > 1000 {
+            return Err("An account export can contain at most 1,000 entries.".into());
+        }
+
+        // Validate and normalize every record before touching the current model.
+        for record in &mut records {
+            record.title = record.title.trim().to_string();
+            if record.title.is_empty() || record.title.chars().count() > 256 {
+                return Err("Every imported entry must have a name of 1 to 256 characters.".into());
+            }
+            if record.kind != "app" && record.kind != "note" {
+                return Err("The export contains an unknown entry type.".into());
+            }
+            if !record.totp_secret.is_empty() && totp::decode_base32(&record.totp_secret).is_none() {
+                return Err(format!("The authenticator secret for '{}' is invalid Base32.", record.title));
+            }
+            if record.kind == "note"
+                && (!record.username.is_empty() || !record.password.is_empty() || !record.totp_secret.is_empty()
+                    || record.passkey || !record.recovery_codes.is_empty())
+            {
+                return Err("A secure-note export contains account-only fields.".into());
+            }
+            if record.recovery_codes.len() > 1000 {
+                return Err("An imported account contains more than 1,000 recovery codes.".into());
+            }
+            for code in &mut record.recovery_codes {
+                code.code = code.code.trim().to_string();
+                if code.code.is_empty() || code.code.chars().count() > 256 {
+                    return Err("Every recovery code must contain 1 to 256 characters.".into());
+                }
+            }
+            for (index, code) in record.recovery_codes.iter().enumerate() {
+                if record.recovery_codes[..index].iter().any(|prior| prior.code == code.code) {
+                    return Err(format!("The export contains duplicate recovery codes for '{}'.", record.title));
+                }
+            }
+        }
+
+        let count = u64::try_from(records.len()).map_err(|_| "Too many account entries.".to_string())?;
+        let next_id = self.next_id.checked_add(count).ok_or_else(|| "The account ID counter is exhausted.".to_string())?;
+        let old_next_id = self.next_id;
+        let mut ids = Vec::with_capacity(records.len());
+        for mut record in records {
+            let id = self.next_id;
+            self.next_id += 1;
+            ids.push(id);
+            self.items.push(Item {
+                id,
+                kind: std::mem::take(&mut record.kind),
+                title: std::mem::take(&mut record.title),
+                favorite: record.favorite,
+                username: std::mem::take(&mut record.username),
+                password: std::mem::take(&mut record.password),
+                totp_secret: std::mem::take(&mut record.totp_secret),
+                passkey: record.passkey,
+                notes: std::mem::take(&mut record.notes),
+                recovery_codes: std::mem::take(&mut record.recovery_codes),
+            });
+        }
+        debug_assert_eq!(self.next_id, next_id);
+        Ok((ids.len(), Undo::RemoveImportedItems { ids, next_id: old_next_id }))
     }
 
     // ---- folders and files ----------------------------------------------------------------------
