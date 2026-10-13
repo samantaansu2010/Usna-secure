@@ -253,6 +253,9 @@
     async showRecoveryCodes() { S.recoveryCodes = await invoke('get_recovery_codes', { id: S.sel }); renderDetail(); },
     async hideRecoveryCodes() { S.recoveryCodes = null; renderDetail(); },
     async addRecoveryCodes() {
+      // Do not leave revealed recovery values visible behind the modal.
+      S.recoveryCodes = null;
+      renderDetail();
       $('recoveryInput').value = ''; $('recoveryErr').textContent = '';
       $('recoverydlg').showModal(); $('recoveryInput').focus();
     },
