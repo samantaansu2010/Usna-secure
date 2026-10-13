@@ -51,6 +51,8 @@
     $('content').innerHTML = ''; $('detail').innerHTML = EMPTY; $('q').value = '';
     for (const id of ['dlg', 'pwdlg', 'namedlg', 'recoverydlg']) { const d = $(id); if (d && d.open) d.close(); }
     for (const id of ['fp', 'fo', 'cp0', 'cp1', 'cp2', 'pw', 'spw', 'spw2', 'recoveryInput']) $(id).value = '';
+    $('fp').type = 'password'; $('fpToggle').textContent = 'Show';
+    $('fo').type = 'password'; $('foToggle').textContent = 'Show';
     $('lockMsg').textContent = message || 'Your vault is locked.'; $('lerr').textContent = '';
     screen('lock'); $('pw').focus();
   }
@@ -188,7 +190,19 @@
     async theme(d) { applyTheme(d.theme); },
     async newItem() { openItemDialog(null); },
     async edit() { openItemDialog(S.detail); },
-    async gen() { $('fp').value = await invoke('generate_password', { length: 20 }); strength($('fp').value, 'fbar'); },
+    async gen() { $('fp').value = await invoke('generate_password', { length: 20 }); $('fp').type = 'password'; $('fpToggle').textContent = 'Show'; strength($('fp').value, 'fbar'); },
+    async togglePasswordInput() {
+      const field = $('fp');
+      field.type = field.type === 'password' ? 'text' : 'password';
+      $('fpToggle').textContent = field.type === 'password' ? 'Show' : 'Hide';
+      field.focus();
+    },
+    async toggleTotpInput() {
+      const field = $('fo');
+      field.type = field.type === 'password' ? 'text' : 'password';
+      $('foToggle').textContent = field.type === 'password' ? 'Show' : 'Hide';
+      field.focus();
+    },
     async closeDlg() { $('dlg').close(); },
     async openPw() { $('perr').textContent = ''; $('pwdlg').showModal(); $('cp0').focus(); },
     async closePw() { $('pwdlg').close(); },
@@ -280,8 +294,8 @@
     $('dlgTitle').textContent = item ? 'Edit item' : 'New item'; $('itemForm').dataset.id = item ? String(item.id) : '';
     $('fk').value = item ? item.kind : 'app'; $('fk').disabled = !!item; $('appFields').hidden = $('fk').value === 'note';
     $('ft').value = item ? item.title : ''; $('fu').value = item ? item.username : '';
-    $('fp').value = ''; $('fp').placeholder = item && item.has_password ? 'Leave blank to keep the current password' : '';
-    $('fo').value = ''; $('fo').placeholder = item && item.has_totp ? 'Leave blank to keep the current secret' : 'JBSW Y3DP EHPK 3PXP';
+    $('fp').value = ''; $('fp').type = 'password'; $('fpToggle').textContent = 'Show'; $('fp').placeholder = item && item.has_password ? 'Leave blank to keep the current password' : '';
+    $('fo').value = ''; $('fo').type = 'password'; $('foToggle').textContent = 'Show'; $('fo').placeholder = item && item.has_totp ? 'Leave blank to keep the current secret' : 'JBSW Y3DP EHPK 3PXP';
     $('fa').checked = item ? item.passkey : false; $('fn').value = item ? item.notes : ''; $('ferr').textContent = ''; strength('', 'fbar');
     $('dlg').showModal(); $('ft').focus();
   }
