@@ -86,6 +86,17 @@
   </form>
 </dialog>
 
+<dialog id="recoverydlg">
+  <form id="recoveryForm" class="recovery-form" autocomplete="off">
+    <h3>Add recovery codes</h3>
+    <p class="note">Paste one code per line. Codes are stored inside the encrypted vault and linked to this account. Avoid screenshots or unencrypted exports.</p>
+    <label for="recoveryInput">Recovery codes</label>
+    <textarea class="in mono" id="recoveryInput" rows="6" maxlength="26000" placeholder="ABCD-EFGH\nIJKL-MNOP" spellcheck="false" autocapitalize="off" autocomplete="off" required></textarea>
+    <div class="err" id="recoveryErr" role="alert"></div>
+    <div class="row end"><button type="button" class="btn" data-act="closeRecoveryDlg">Cancel</button><button class="btn pri" id="recoverySave">Save codes</button></div>
+  </form>
+</dialog>
+
 <dialog id="pwdlg">
   <form id="pwForm" autocomplete="off">
     <h3>Change master password</h3>
