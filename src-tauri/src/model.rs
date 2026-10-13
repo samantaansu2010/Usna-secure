@@ -606,6 +606,44 @@ mod tests {
     }
 
     #[test]
+    fn recovery_codes_are_account_scoped_counted_and_undoable() {
+        let mut m = Model::default();
+        let (id, undo) = m.upsert(input("Discord")).unwrap();
+        undo.discard();
+
+        let (added, undo) = m.add_recovery_codes(id, vec!["alpha-code".into(), "beta-code".into()]).unwrap();
+        assert_eq!(added, 2);
+        undo.discard();
+        let view = m.find(id).unwrap().view();
+        assert_eq!(view.recovery_code_count, 2);
+        assert_eq!(view.recovery_codes_remaining, 2);
+        let serialized_view = serde_json::to_string(&view).unwrap();
+        assert!(!serialized_view.contains("alpha-code"));
+        assert!(!serialized_view.contains("beta-code"));
+
+        let undo = m.set_recovery_code_used(id, 0, true).unwrap();
+        undo.discard();
+        assert_eq!(m.find(id).unwrap().view().recovery_codes_remaining, 1);
+
+        let before_delete = json(&m);
+        let undo = m.delete_recovery_code(id, 0).unwrap();
+        assert_eq!(m.find(id).unwrap().recovery_codes.len(), 1);
+        m.revert(undo);
+        assert_eq!(json(&m), before_delete, "deletion undo restores code and original position");
+
+        let before_invalid = json(&m);
+        assert!(m.add_recovery_codes(id, vec!["beta-code".into()]).is_err(), "existing code must be rejected");
+        assert!(m.add_recovery_codes(id, vec!["same".into(), "same".into()]).is_err(), "batch duplicates must be rejected");
+        assert_eq!(json(&m), before_invalid, "invalid recovery-code operations must not mutate the model");
+
+        let mut note = input("Private note");
+        note.kind = "note".into();
+        let (note_id, undo) = m.upsert(note).unwrap();
+        undo.discard();
+        assert!(m.add_recovery_codes(note_id, vec!["not-allowed".into()]).is_err());
+    }
+
+    #[test]
     fn folders_and_files() {
         let mut m = Model::default();
         assert_eq!(m.folders.len(), 4);
