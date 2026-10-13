@@ -899,6 +899,7 @@ pub async fn verify_vault(app: AppHandle, state: State<'_, AppState>) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::RecoveryCode;
     use std::sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
         Arc,
