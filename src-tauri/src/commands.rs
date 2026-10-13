@@ -1098,6 +1098,27 @@ mod tests {
     }
 
     #[test]
+    fn failed_recovery_code_mutations_restore_the_committed_snapshot() {
+        let b = TestBackend::default();
+        let mut s = make_session(&b);
+        let id = s.save_item(item("Discord", "pw")).unwrap();
+        s.add_recovery_codes(id, vec!["alpha-code".into(), "beta-code".into()]).unwrap();
+        let before = live(&s);
+
+        b.fail(true);
+        assert!(s.add_recovery_codes(id, vec!["new-code".into()]).is_err());
+        assert!(s.set_recovery_code_used(id, 0, true).is_err());
+        assert!(s.delete_recovery_code(id, 0).is_err());
+        assert_eq!(live(&s), before, "failed recovery-code writes restore values and used state");
+        assert_consistent(&s, &b);
+
+        b.fail(false);
+        s.set_recovery_code_used(id, 0, true).unwrap();
+        assert_eq!(s.model.find(id).unwrap().view().recovery_codes_remaining, 1);
+        assert_consistent(&s, &b);
+    }
+
+    #[test]
     fn revision_advances_only_on_successful_saves() {
         let b = TestBackend::default();
         let mut s = make_session(&b);
