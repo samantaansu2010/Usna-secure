@@ -444,6 +444,14 @@ impl Model {
                 return Err("The authenticator secret is not valid Base32 (at least 10 bytes).".into());
             }
         }
+        if input.kind == "note"
+            && (!input.username.is_empty()
+                || input.password.as_deref().is_some_and(|value| !value.is_empty())
+                || input.totp_secret.as_deref().is_some_and(|value| !value.is_empty())
+                || input.passkey)
+        {
+            return Err("Secure notes cannot include account-only fields.".into());
+        }
         let apply = |it: &mut Item| {
             it.kind = input.kind.clone();
             it.title = title.clone();
@@ -459,6 +467,9 @@ impl Model {
         };
         match input.id {
             Some(id) => {
+                if self.find(id)?.kind != input.kind {
+                    return Err("An item's type cannot be changed after creation.".into());
+                }
                 let old = self.find(id)?.clone();
                 apply(self.find_mut(id)?);
                 Ok((id, Undo::RestoreItem(old)))
@@ -772,6 +783,41 @@ mod tests {
         assert!(m.create_folder("  ").is_err() && m.rename_folder(999, "x").is_err() && m.delete_folder(999).is_err());
         assert!(m.add_file(rec(999, "a", "0")).is_err() && m.delete_file(999).is_err());
         assert_eq!(json(&m), before, "a rejected operation must not modify the model");
+    }
+
+    #[test]
+    fn notes_reject_account_fields_and_item_types_cannot_change() {
+        let mut m = Model::default();
+
+        let mut invalid_note = input("Secret note");
+        invalid_note.kind = "note".into();
+        assert!(m.upsert(invalid_note).is_err());
+        assert!(m.items.is_empty());
+
+        let mut note = input("Secret note");
+        note.kind = "note".into();
+        note.username.clear();
+        note.password = None;
+        let (note_id, undo) = m.upsert(note).unwrap();
+        undo.discard();
+
+        let (app_id, undo) = m.upsert(input("Discord")).unwrap();
+        undo.discard();
+        let (_, undo) = m.add_recovery_codes(app_id, vec!["recovery-secret".into()]).unwrap();
+        undo.discard();
+        let before = json(&m);
+
+        let mut convert_app_to_note = input("Discord");
+        convert_app_to_note.id = Some(app_id);
+        convert_app_to_note.kind = "note".into();
+        convert_app_to_note.username.clear();
+        convert_app_to_note.password = None;
+        convert_app_to_note.totp_secret = None;
+        convert_app_to_note.passkey = false;
+        assert!(m.upsert(convert_app_to_note).is_err());
+        assert_eq!(json(&m), before);
+        assert_eq!(m.find(note_id).unwrap().kind, "note");
+        assert_eq!(m.find(app_id).unwrap().recovery_codes[0].code, "recovery-secret");
     }
 
     #[test]
