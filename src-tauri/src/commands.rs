@@ -408,7 +408,7 @@ pub fn list_items(state: State<'_, AppState>) -> Result<Vec<ItemSummary>, String
 /// Writes a plaintext JSON export only after the UI asks for explicit confirmation.
 /// The resulting file contains account secrets and must be protected accordingly.
 #[tauri::command]
-pub fn export_accounts(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+pub async fn export_accounts(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
     let bytes = with_session(state.inner(), |s| {
         if s.model.items.len() > 1000 {
             return Err("Account export supports at most 1,000 entries.".into());
@@ -456,7 +456,7 @@ pub fn export_accounts(app: AppHandle, state: State<'_, AppState>) -> Result<boo
 
 /// Imports an explicit plaintext JSON export as new records. Existing records are never overwritten.
 #[tauri::command]
-pub fn import_accounts(app: AppHandle, state: State<'_, AppState>) -> Result<usize, String> {
+pub async fn import_accounts(app: AppHandle, state: State<'_, AppState>) -> Result<usize, String> {
     let Some(picked) = app.dialog().file()
         .add_filter("USNA Secure account export", &["json"])
         .blocking_pick_file()
