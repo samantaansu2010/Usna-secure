@@ -75,9 +75,9 @@
     <div id="appFields">
       <label for="fu">Email or username</label><input class="in" id="fu" placeholder="you@example.com">
       <label for="fp">Password</label>
-      <div class="row"><input class="in mono" id="fp" style="margin:0"><button type="button" class="btn" data-act="gen">Generate</button></div>
+      <div class="row"><input class="in mono" id="fp" type="password" autocomplete="new-password" style="margin:0"><button type="button" class="btn" id="fpToggle" data-act="togglePasswordInput">Show</button><button type="button" class="btn" data-act="gen">Generate</button></div>
       <div class="bar"><i id="fbar"></i></div>
-      <label for="fo">Authenticator secret (Base32, optional)</label><input class="in mono" id="fo" placeholder="JBSW Y3DP EHPK 3PXP">
+      <label for="fo">Authenticator secret (Base32, optional)</label><div class="row"><input class="in mono" id="fo" type="password" autocomplete="off" style="margin:0" placeholder="JBSW Y3DP EHPK 3PXP"><button type="button" class="btn" id="foToggle" data-act="toggleTotpInput">Show</button></div>
       <label class="chk"><input type="checkbox" id="fa"> I have a passkey for this app (record only; passkey sign-in is not supported yet)</label>
     </div>
     <label for="fn">Notes</label><textarea class="in" id="fn" rows="3"></textarea>
