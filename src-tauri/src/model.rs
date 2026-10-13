@@ -195,6 +195,14 @@ pub struct ItemInput {
 }
 
 impl Item {
+    /// Match user-visible metadata only. Secret values are deliberately excluded from search.
+    pub fn matches_search(&self, needle: &str) -> bool {
+        needle.is_empty()
+            || self.title.to_lowercase().contains(needle)
+            || self.username.to_lowercase().contains(needle)
+            || self.notes.to_lowercase().contains(needle)
+    }
+
     pub fn summary(&self) -> ItemSummary {
         ItemSummary {
             id: self.id,
@@ -606,6 +614,28 @@ mod tests {
         assert!(!v.contains("\"p\""));
         let summary = serde_json::to_string(&m.find(id).unwrap().summary()).unwrap();
         assert!(!summary.contains("password"));
+    }
+
+    #[test]
+    fn search_matches_metadata_but_never_secret_values() {
+        let mut m = Model::default();
+        let mut entry = input("Discord");
+        entry.username = "anshu@example.test".into();
+        entry.password = Some("password-secret-xyz".into());
+        entry.totp_secret = Some("JBSWY3DPEHPK3PXP".into());
+        entry.notes = "backup email and account recovery".into();
+        let (id, undo) = m.upsert(entry).unwrap();
+        undo.discard();
+        let ((), undo) = m.add_recovery_codes(id, vec!["recovery-secret-123".into()]).map(|(n,u)| ((),u)).unwrap();
+        undo.discard();
+        let item = m.find(id).unwrap();
+
+        assert!(item.matches_search("discord"));
+        assert!(item.matches_search("ANSHU@EXAMPLE.TEST"));
+        assert!(item.matches_search("account recovery"));
+        assert!(!item.matches_search("password-secret-xyz"));
+        assert!(!item.matches_search("JBSWY3DPEHPK3PXP"));
+        assert!(!item.matches_search("recovery-secret-123"));
     }
 
     #[test]
