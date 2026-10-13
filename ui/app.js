@@ -104,7 +104,7 @@
   }
   const fmtSize = (n) => (n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(2) + ' GB');
   function foldersGrid() {
-    return `<div class="grid">${S.folders.map((f) => `<button class="card" data-act="openFolder" data-id="${f.id}"><div class="ico" style="background:var(--ac2)">▤</div><b>${esc(f.name)}</b><small>${f.count} file${f.count === 1 ? '' : 's'}</small></button>`).join('')}</div>`;
+    return `<div class="grid">${S.folders.map((f) => `<button class="card" data-act="openFolder" data-id="${f.id}"><div class="ico">▤</div><b>${esc(f.name)}</b><small>${f.count} file${f.count === 1 ? '' : 's'}</small></button>`).join('')}</div>`;
   }
   function folderPage() {
     const f = S.folders.find((x) => x.id === S.folder); if (!f) return '';
