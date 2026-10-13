@@ -183,7 +183,12 @@
 
   // ---- actions (single delegated listener: the CSP forbids inline handlers) ---------------------------
   const A = {
-    async nav(d) { S.view = d.view; render(); },
+    async nav(d) {
+      S.view = d.view;
+      S.shown = null; S.recoveryCodes = null;
+      if (S.view === 'set') { S.sel = null; S.detail = null; }
+      render(); renderDetail();
+    },
     async open(d) { S.file = null; S.preview = null; S.sel = Number(d.id); S.shown = null; S.recoveryCodes = null; S.detail = await invoke('get_item', { id: S.sel }); render(); renderDetail(); },
     async close() { S.sel = null; S.detail = null; S.shown = null; S.recoveryCodes = null; render(); renderDetail(); },
     async reveal() { S.shown = await invoke('reveal_password', { id: S.sel }); renderDetail(); },
@@ -213,8 +218,8 @@
     async closePw() { $('pwdlg').close(); },
     async openFolder(d) { S.folder = Number(d.id); S.view = 'folder'; S.file = null; S.preview = null; S.sel = null; S.detail = null; S.recoveryCodes = null; S.files = await invoke('list_files', { folderId: S.folder }); render(); renderDetail(); },
     async backFolders() { S.folder = null; S.files = []; S.file = null; S.preview = null; S.recoveryCodes = null; render(); renderDetail(); },
-    async newFolder() { S.nameMode = 'new'; $('nameTitle').textContent = 'New folder'; $('nm').value = ''; $('nerr').textContent = ''; $('namedlg').showModal(); $('nm').focus(); },
-    async renameFolder() { const f = S.folders.find((x) => x.id === S.folder); S.nameMode = 'rename'; $('nameTitle').textContent = 'Rename folder'; $('nm').value = f ? f.name : ''; $('nerr').textContent = ''; $('namedlg').showModal(); $('nm').select(); },
+    async newFolder() { S.shown = null; S.recoveryCodes = null; renderDetail(); S.nameMode = 'new'; $('nameTitle').textContent = 'New folder'; $('nm').value = ''; $('nerr').textContent = ''; $('namedlg').showModal(); $('nm').focus(); },
+    async renameFolder() { const f = S.folders.find((x) => x.id === S.folder); S.shown = null; S.recoveryCodes = null; renderDetail(); S.nameMode = 'rename'; $('nameTitle').textContent = 'Rename folder'; $('nm').value = f ? f.name : ''; $('nerr').textContent = ''; $('namedlg').showModal(); $('nm').select(); },
     async closeName() { $('namedlg').close(); },
     async deleteFolder() {
       const f = S.folders.find((x) => x.id === S.folder); if (!f) return;
@@ -396,6 +401,12 @@
     } else if (e.key === 'Escape' && $('recoverydlg').open) {
       $('recoveryInput').value = '';
     }
+  });
+  window.addEventListener('blur', () => {
+    if ($('app').hidden || (S.shown === null && S.recoveryCodes === null)) return;
+    S.shown = null;
+    S.recoveryCodes = null;
+    renderDetail();
   });
   let lastTouch = 0;
   const touch = () => { const n = Date.now(); if (!$('app').hidden && n - lastTouch > 5000) { lastTouch = n; invoke('touch').catch(() => {}); } };
