@@ -410,6 +410,9 @@ pub fn list_items(state: State<'_, AppState>) -> Result<Vec<ItemSummary>, String
 #[tauri::command]
 pub fn export_accounts(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
     let bytes = with_session(state.inner(), |s| {
+        if s.model.items.len() > 1000 {
+            return Err("Account export supports at most 1,000 entries.".into());
+        }
         let document = AccountExportDocument {
             format: ACCOUNT_EXPORT_FORMAT.to_string(),
             version: ACCOUNT_EXPORT_VERSION,
@@ -428,6 +431,9 @@ pub fn export_accounts(app: AppHandle, state: State<'_, AppState>) -> Result<boo
         serde_json::to_vec_pretty(&document).map(Zeroizing::new)
             .map_err(|_| "Could not serialize account data for export.".to_string())
     })?;
+    if bytes.len() as u64 > MAX_ACCOUNT_EXPORT_BYTES {
+        return Err("The account export exceeds the 10 MiB size limit.".into());
+    }
 
     let Some(dest) = app.dialog().file()
         .set_file_name("usna-secure-accounts.json")
