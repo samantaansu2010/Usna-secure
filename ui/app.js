@@ -118,12 +118,17 @@
   }
   function settingsHtml() {
     const opt = (cur, arr) => arr.map(([n, l]) => `<option value="${n}" ${cur === n ? 'selected' : ''}>${l}</option>`).join('');
-    return `<div class="f"><label>Lock after inactivity</label><select class="in" style="margin:0" data-set="auto_lock_secs">${opt(S.settings.auto_lock_secs, [[60, '1 minute'], [300, '5 minutes'], [900, '15 minutes'], [0, 'Never']])}</select></div>
-    <div class="f"><label>Clear clipboard after</label><select class="in" style="margin:0" data-set="clipboard_clear_secs">${opt(S.settings.clipboard_clear_secs, [[10, '10 seconds'], [20, '20 seconds'], [45, '45 seconds'], [90, '90 seconds']])}</select></div>
-    <div class="f"><label>Appearance</label><div class="row"><button class="btn" data-act="theme" data-theme="light">Light</button><button class="btn" data-act="theme" data-theme="dark">Dark</button></div><div class="note">Saved as a local display preference, not inside the vault.</div></div>
-    <div class="f"><label>Master password</label><button class="btn" data-act="openPw">Change master password</button></div>
-    <div class="f"><label>Vault integrity</label><button class="btn" data-act="verify">Check vault integrity</button>${verifyHtml()}</div>
-    <div class="f"><label>Shortcut</label>Press <b class="mono">Ctrl + L</b> to lock immediately.</div>`;
+    return `<div class="sec">Session security</div>
+    <div class="f"><label>Lock after inactivity</label><select class="in" style="margin:0" data-set="auto_lock_secs">${opt(S.settings.auto_lock_secs, [[60, '1 minute'], [300, '5 minutes'], [900, '15 minutes'], [0, 'Never']])}</select><div class="note">The vault locks in Rust after this period without activity.</div></div>
+    <div class="f"><label>Clear clipboard after</label><select class="in" style="margin:0" data-set="clipboard_clear_secs">${opt(S.settings.clipboard_clear_secs, [[10, '10 seconds'], [20, '20 seconds'], [45, '45 seconds'], [90, '90 seconds']])}</select><div class="note">Copied secrets are cleared only if the clipboard still contains the value USNA Secure copied.</div></div>
+    <div class="f"><label>Master password</label><button class="btn" data-act="openPw">Change master password</button><div class="note">Old copies and exports of the vault may still accept the old password.</div></div>
+    <div class="sec">Appearance</div>
+    <div class="f"><label>Theme</label><div class="row"><button class="btn" data-act="theme" data-theme="light">Light</button><button class="btn" data-act="theme" data-theme="dark">Dark</button></div><div class="note">Saved as a local display preference, not inside the vault.</div></div>
+    <div class="sec">Account data</div>
+    <div class="f"><label>Import or export account records</label><div class="row" style="flex-wrap:wrap"><button class="btn" data-act="exportAccounts">Export JSON</button><button class="btn" data-act="importAccounts">Import JSON</button></div><div class="note">JSON exports are plaintext and include account secrets, notes, authenticator seeds, and recovery codes. Only use them temporarily and store them safely.</div></div>
+    <div class="sec">Vault maintenance</div>
+    <div class="f"><label>Integrity</label><button class="btn" data-act="verify">Check vault integrity</button>${verifyHtml()}</div>
+    <div class="f"><label>Shortcuts</label><div><b class="mono">Ctrl + K</b> Search the vault</div><div><b class="mono">Ctrl + L</b> Lock immediately</div></div>`;
   }
   function renderDetail() {
     const d = $('detail'), x = S.detail;
@@ -223,6 +228,21 @@
     async exportFile() { if (!confirm('This saves an UNENCRYPTED copy of the file where you choose. Continue?')) return; if (await invoke('export_file', { id: S.file.id })) toast('Exported'); },
     async deleteFile() { if (!confirm(`Delete "${S.file.name}" from the vault? This cannot be undone.`)) return; await invoke('delete_file', { id: S.file.id }); S.file = null; S.preview = null; await refresh(); renderDetail(); toast('Deleted'); },
     async verify() { toast('Checking every encrypted file…'); S.verify = await invoke('verify_vault'); render(); },
+    async exportAccounts() {
+      const confirmed = confirm('This creates a PLAIN TEXT JSON file containing account names, usernames, passwords, notes, authenticator seeds and recovery codes. The file is not encrypted. Store it securely and delete it when finished. Continue?');
+      if (!confirmed) return;
+      const saved = await invoke('export_accounts');
+      if (saved) toast('Plaintext export saved. Protect the file and remove it when no longer needed.');
+    },
+    async importAccounts() {
+      const confirmed = confirm('Import a USNA Secure account JSON export? Its contents are plaintext. Existing entries will not be overwritten; imported entries are added as new records. Only import a file you trust.');
+      if (!confirmed) return;
+      const count = await invoke('import_accounts');
+      if (!count) return;
+      await refresh();
+      renderDetail();
+      toast(`Imported ${count} account record${count === 1 ? '' : 's'}`);
+    },
     async showRecoveryCodes() { S.recoveryCodes = await invoke('get_recovery_codes', { id: S.sel }); renderDetail(); },
     async hideRecoveryCodes() { S.recoveryCodes = null; renderDetail(); },
     async addRecoveryCodes() {
