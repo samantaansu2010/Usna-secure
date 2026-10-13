@@ -193,9 +193,38 @@ impl Session {
 }
 
 #[derive(Default)]
+struct ClipboardCopy {
+    /// Increments every time a value is copied or explicitly cleared.
+    generation: u64,
+    value: Option<Zeroizing<String>>,
+}
+
+impl ClipboardCopy {
+    fn replace(&mut self, value: Zeroizing<String>) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.value = Some(value);
+        self.generation
+    }
+
+    /// Only the timer associated with the current value may clear it.
+    fn take_if_current(&mut self, generation: u64) -> Option<Zeroizing<String>> {
+        if self.generation != generation {
+            return None;
+        }
+        self.value.take()
+    }
+
+    /// Invalidates all pending timers and returns the value the app last copied.
+    fn take(&mut self) -> Option<Zeroizing<String>> {
+        self.generation = self.generation.wrapping_add(1);
+        self.value.take()
+    }
+}
+
+#[derive(Default)]
 pub struct AppState {
     session: Mutex<Option<Session>>,
-    copied: Mutex<Option<Zeroizing<String>>>,
+    copied: Mutex<ClipboardCopy>,
     failed_unlocks: Mutex<u32>,
     /// Object ids currently being imported (so the integrity check does not call them orphans).
     importing: Mutex<HashSet<String>>,
@@ -604,17 +633,23 @@ pub fn copy_field(
         return Err("There is nothing to copy.".into());
     }
     let mut cb = arboard::Clipboard::new().map_err(|e| format!("Clipboard unavailable: {e}"))?;
-    cb.set_text(value.as_str()).map_err(|e| format!("Could not copy: {e}"))?;
-    if let Ok(mut c) = state.copied.lock() {
-        *c = Some(value.clone());
-    }
+    // Serialize our clipboard writes with timer clears so an older timer cannot erase a newer copy.
+    let generation = {
+        let mut copied = state.copied.lock().map_err(|_| "Internal error (clipboard state lock poisoned).".to_string())?;
+        cb.set_text(value.as_str()).map_err(|e| format!("Could not copy: {e}"))?;
+        copied.replace(value.clone())
+    };
+    drop(cb);
+
     if secs > 0 {
         let handle = app.clone();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(secs));
-            clear_clipboard_if_equal(value.as_str()); // only if the clipboard still holds our value
-            if let Ok(mut c) = handle.state::<AppState>().copied.lock() {
-                *c = None;
+            if let Ok(mut copied) = handle.state::<AppState>().copied.lock() {
+                if let Some(current) = copied.take_if_current(generation) {
+                    // Keep the lock while checking/clearing to serialize against subsequent app copies.
+                    clear_clipboard_if_equal(current.as_str());
+                }
             }
         });
     }
@@ -904,6 +939,28 @@ mod tests {
         atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
         Arc,
     };
+
+    #[test]
+    fn newer_clipboard_copy_invalidates_older_timeout() {
+        let mut copied = ClipboardCopy::default();
+        let older = copied.replace(Zeroizing::new("older-secret".to_string()));
+        let newer = copied.replace(Zeroizing::new("newer-secret".to_string()));
+
+        assert!(copied.take_if_current(older).is_none());
+        assert_eq!(copied.value.as_ref().unwrap().as_str(), "newer-secret");
+        assert_eq!(copied.take_if_current(newer).unwrap().as_str(), "newer-secret");
+        assert!(copied.value.is_none());
+    }
+
+    #[test]
+    fn clearing_clipboard_state_invalidates_pending_timeout() {
+        let mut copied = ClipboardCopy::default();
+        let generation = copied.replace(Zeroizing::new("temporary-secret".to_string()));
+
+        assert_eq!(copied.take().unwrap().as_str(), "temporary-secret");
+        assert!(copied.take_if_current(generation).is_none());
+        assert!(copied.value.is_none());
+    }
 
     // ---- unchanged behaviour ---------------------------------------------------------------------
 
