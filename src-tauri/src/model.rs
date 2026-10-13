@@ -626,7 +626,7 @@ mod tests {
         entry.notes = "backup email and account recovery".into();
         let (id, undo) = m.upsert(entry).unwrap();
         undo.discard();
-        let ((), undo) = m.add_recovery_codes(id, vec!["recovery-secret-123".into()]).map(|(n,u)| ((),u)).unwrap();
+        let (_, undo) = m.add_recovery_codes(id, vec!["recovery-secret-123".into()]).unwrap();
         undo.discard();
         let item = m.find(id).unwrap();
 
