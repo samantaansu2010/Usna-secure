@@ -34,6 +34,21 @@ pub struct Item {
     /// Record only: the app does not act as a passkey authenticator (docs/DATA_MODEL.md).
     pub passkey: bool,
     pub notes: String,
+    /// Recovery codes are sealed with this account inside the encrypted snapshot.
+    pub recovery_codes: Vec<RecoveryCode>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct RecoveryCode {
+    pub code: String,
+    pub used: bool,
+}
+
+impl RecoveryCode {
+    fn wipe(&mut self) {
+        self.code.zeroize();
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -161,6 +176,9 @@ pub struct ItemView {
     pub has_totp: bool,
     pub passkey: bool,
     pub notes: String,
+    /// Counts only. Code values leave Rust only on an explicit reveal command.
+    pub recovery_code_count: usize,
+    pub recovery_codes_remaining: usize,
 }
 
 #[derive(Deserialize)]
@@ -198,6 +216,8 @@ impl Item {
             has_totp: !self.totp_secret.is_empty(),
             passkey: self.passkey,
             notes: self.notes.clone(),
+            recovery_code_count: self.recovery_codes.len(),
+            recovery_codes_remaining: self.recovery_codes.iter().filter(|code| !code.used).count(),
         }
     }
 }
@@ -211,6 +231,7 @@ pub enum Undo {
     PopItem { id: u64, next_id: u64 },
     RestoreItem(Item),
     ReinsertItem { index: usize, item: Item },
+    RestoreRecoveryCode { item_id: u64, index: usize, code: RecoveryCode },
     Favorite { id: u64, old: bool },
     PopFolder { id: u64, next_folder_id: u64 },
     RenameFolder { id: u64, old: String },
@@ -224,6 +245,9 @@ fn wipe_item(it: &mut Item) {
     it.totp_secret.zeroize();
     it.username.zeroize();
     it.notes.zeroize();
+    for code in &mut it.recovery_codes {
+        code.wipe();
+    }
 }
 
 impl Undo {
@@ -231,6 +255,7 @@ impl Undo {
     pub fn discard(self) {
         match self {
             Undo::RestoreItem(mut it) | Undo::ReinsertItem { item: mut it, .. } => wipe_item(&mut it),
+            Undo::RestoreRecoveryCode { mut code, .. } => code.wipe(),
             _ => {}
         }
     }
@@ -264,6 +289,14 @@ impl Model {
             Undo::ReinsertItem { index, item } => {
                 let at = index.min(self.items.len());
                 self.items.insert(at, item);
+            }
+            Undo::RestoreRecoveryCode { item_id, index, mut code } => {
+                if let Some(item) = self.items.iter_mut().find(|item| item.id == item_id) {
+                    let at = index.min(item.recovery_codes.len());
+                    item.recovery_codes.insert(at, code);
+                } else {
+                    code.wipe();
+                }
             }
             Undo::Favorite { id, old } => {
                 if let Some(it) = self.items.iter_mut().find(|i| i.id == id) {
@@ -359,6 +392,62 @@ impl Model {
 
     pub fn set_settings(&mut self, settings: Settings) -> Undo {
         Undo::Settings(std::mem::replace(&mut self.settings, settings))
+    }
+
+    /// Add recovery codes to an app/account. Validation completes before mutation.
+    pub fn add_recovery_codes(&mut self, id: u64, codes: Vec<String>) -> Result<(usize, Undo), String> {
+        if codes.is_empty() {
+            return Err("Enter at least one recovery code.".into());
+        }
+        if codes.len() > 100 {
+            return Err("Add no more than 100 recovery codes at a time.".into());
+        }
+        let mut clean: Vec<String> = Vec::with_capacity(codes.len());
+        for raw in codes {
+            let code = raw.trim().to_string();
+            if code.is_empty() || code.chars().count() > 256 {
+                return Err("Each recovery code must contain 1 to 256 characters.".into());
+            }
+            if clean.iter().any(|existing| existing == &code) {
+                return Err("The recovery-code list contains duplicates.".into());
+            }
+            clean.push(code);
+        }
+
+        let current = self.find(id)?;
+        if current.kind != "app" {
+            return Err("Recovery codes can only be attached to an app or account.".into());
+        }
+        if current.recovery_codes.len() + clean.len() > 1000 {
+            return Err("An account can store at most 1,000 recovery codes.".into());
+        }
+        if clean.iter().any(|new_code| current.recovery_codes.iter().any(|old| old.code == *new_code)) {
+            return Err("One or more recovery codes already exist for this account.".into());
+        }
+
+        let old = current.clone();
+        let item = self.find_mut(id)?;
+        let added = clean.len();
+        item.recovery_codes.extend(clean.into_iter().map(|code| RecoveryCode { code, used: false }));
+        Ok((added, Undo::RestoreItem(old)))
+    }
+
+    pub fn set_recovery_code_used(&mut self, id: u64, index: usize, used: bool) -> Result<Undo, String> {
+        let old = self.find(id)?.clone();
+        let item = self.find_mut(id)?;
+        let code = item.recovery_codes.get_mut(index)
+            .ok_or_else(|| "That recovery code no longer exists.".to_string())?;
+        code.used = used;
+        Ok(Undo::RestoreItem(old))
+    }
+
+    pub fn delete_recovery_code(&mut self, id: u64, index: usize) -> Result<Undo, String> {
+        let item = self.find_mut(id)?;
+        if index >= item.recovery_codes.len() {
+            return Err("That recovery code no longer exists.".into());
+        }
+        let code = item.recovery_codes.remove(index);
+        Ok(Undo::RestoreRecoveryCode { item_id: id, index, code })
     }
 
     // ---- folders and files ----------------------------------------------------------------------
