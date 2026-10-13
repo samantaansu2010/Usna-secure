@@ -613,9 +613,11 @@ pub fn copy_field(
     id: u64,
     field: String,
 ) -> Result<(), String> {
-    let (value, secs) = with_session(state.inner(), |s| {
+    // Keep the session lock through the clipboard write. This prevents a request that
+    // already read a secret from writing it after vault_lock has cleared the clipboard.
+    let (generation, secs) = with_session(state.inner(), |s| {
         let item = s.model.find(id)?;
-        let v = match field.as_str() {
+        let value = match field.as_str() {
             "password" => item.password.clone(),
             "username" => item.username.clone(),
             "totp" => current_code(&item.totp_secret)?.0,
@@ -627,19 +629,20 @@ pub fn copy_field(
             }
             _ => return Err("Unknown field.".to_string()),
         };
-        Ok((Zeroizing::new(v), s.model.settings.clipboard_clear_secs))
-    })?;
-    if value.is_empty() {
-        return Err("There is nothing to copy.".into());
-    }
-    let mut cb = arboard::Clipboard::new().map_err(|e| format!("Clipboard unavailable: {e}"))?;
-    // Serialize our clipboard writes with timer clears so an older timer cannot erase a newer copy.
-    let generation = {
-        let mut copied = state.copied.lock().map_err(|_| "Internal error (clipboard state lock poisoned).".to_string())?;
+        let value = Zeroizing::new(value);
+        if value.is_empty() {
+            return Err("There is nothing to copy.".into());
+        }
+
+        let mut cb = arboard::Clipboard::new().map_err(|e| format!("Clipboard unavailable: {e}"))?;
+        // Copy and tracking update are serialized with expiry timers. The lock order is
+        // session -> copied, matching lock_now's session-then-copied sequence.
+        let mut copied = state.copied.lock()
+            .map_err(|_| "Internal error (clipboard state lock poisoned).".to_string())?;
         cb.set_text(value.as_str()).map_err(|e| format!("Could not copy: {e}"))?;
-        copied.replace(value.clone())
-    };
-    drop(cb);
+        let generation = copied.replace(value);
+        Ok((generation, s.model.settings.clipboard_clear_secs))
+    })?;
 
     if secs > 0 {
         let handle = app.clone();
