@@ -1,9 +1,13 @@
 # USNA Secure: Data Model, Fields, TOTP, Passkeys
 
-Proposed for milestone 4. The snapshot plaintext (VAULT_FORMAT §5) is one versioned document.
-Serialization: CBOR via `ciborium` is proposed (self-describing, native binary fields, tolerant of
-unknown fields); to be confirmed in M4 before the schema is frozen. The snapshot **container** is
-independent of this choice.
+This document describes the intended extensible field model. The current desktop application is simpler:
+it serializes its `Model` as JSON inside the encrypted snapshot, with `Item` records that have fixed fields.
+The `recovery_codes` field is backward-compatible through Serde defaults, so older items deserialize with an
+empty list. The proposed `ciborium` representation below is a future design option, not the current on-disk
+serializer. The snapshot **container** remains independent of the plaintext serialization.
+
+The account import/export JSON is a separate portability format. Unlike `vault.db`, it is **not encrypted** and
+contains account secrets; it must never be confused with the encrypted snapshot or a future `.usnabak` backup.
 
 ```
 Snapshot {
@@ -30,6 +34,17 @@ FieldValue = Text(String)                       // Email, Username, Url, Text, C
            | Passkey(PasskeyRecord)
 ```
 Secret-bearing variants are masked in view models and revealed one field at a time.
+
+## Current recovery-code implementation
+
+The desktop model currently stores recovery codes on their account record as `recovery_codes: Vec<RecoveryCode>`,
+where each `RecoveryCode` contains a `code: String` and a `used: bool`. They are sealed as part of the encrypted
+snapshot. Item views expose only total and remaining counts; the values are returned to the UI only after the user
+explicitly opens that account's recovery-code panel. Copying a code goes through the Rust clipboard command.
+
+Account JSON export includes recovery-code values and used/unused state in plaintext. It uses a versioned envelope,
+has a 10 MiB import limit, adds imported records with new local IDs, validates the batch before mutation, and commits
+the batch once. It is a convenience format, not a secure backup format.
 
 Passwords: generator in Rust (`getrandom`, rejection sampling so there is no modulo bias; length,
 classes, ambiguous-character exclusion, optional word-list passphrase); strength via a `zxcvbn`-style
