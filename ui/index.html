@@ -35,21 +35,35 @@
 </section>
 
 <div id="app" hidden>
-  <aside class="glass">
-    <div class="brand"><div class="mark">🔒</div><b>USNA Secure</b></div>
+  <aside class="app-sidebar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">U</div>
+      <div class="brand-copy"><b>USNA Secure</b><small>PRIVATE WORKSPACE</small></div>
+    </div>
+    <div class="side-caption">YOUR VAULT</div>
     <div id="nav"></div>
-    <div class="sp"></div>
-    <button class="nl" data-act="lock" title="Ctrl+L"><span>🔒</span><span>Lock now</span></button>
+    <div class="sidebar-spacer"></div>
+    <div class="local-status">
+      <span class="status-dot" aria-hidden="true"></span>
+      <div><b>Stored on this device</b><small>No account · No cloud sync</small></div>
+    </div>
+    <button class="nl lock-action" data-act="lock" title="Ctrl+L"><span aria-hidden="true">⌑</span><span>Lock vault</span><kbd>Ctrl L</kbd></button>
   </aside>
-  <main class="glass">
+  <main class="workspace">
     <div class="top">
-      <h2 id="title">All items</h2>
-      <input class="in" id="q" placeholder="Search vault" aria-label="Search vault">
-      <button class="btn pri" data-act="newItem">New item</button>
+      <div class="page-heading">
+        <span class="eyebrow">ENCRYPTED LIBRARY</span>
+        <h2 id="title">All items</h2>
+        <p id="subtitle">Your accounts and private notes, in one place.</p>
+      </div>
+      <div class="top-actions">
+        <label class="search-box" for="q"><span aria-hidden="true">⌕</span><input id="q" placeholder="Search names, usernames, notes…" aria-label="Search names, usernames and notes"><kbd>Ctrl K</kbd></label>
+        <button class="btn pri new-item-button" data-act="newItem"><span aria-hidden="true">＋</span> New item</button>
+      </div>
     </div>
     <div id="content"></div>
   </main>
-  <section id="detail" class="glass"></section>
+  <section id="detail" class="detail-panel" aria-label="Selected item details"></section>
 </div>
 
 <dialog id="dlg">
