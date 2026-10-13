@@ -7,7 +7,7 @@
   const invoke = tauri.core.invoke;
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const COLORS = ['#ffb454', '#3fb8a8', '#8fb7ff', '#ff8f7a', '#c3a6ff', '#7bd88f'];
+  const COLORS = ['#354338', '#36464a', '#4a4238', '#3c414d', '#46423b', '#354843'];
   const NAV = [['all', '◫', 'All'], ['app', '⌘', 'Apps'], ['folder', '▤', 'Folders'], ['fav', '★', 'Favorites'], ['note', '✎', 'Secure notes'], ['set', '⚙', 'Settings']];
   const EMPTY = '<div class="empty">Select an item to see its fields.</div>';
   const S = { items: [], searchResults: null, searchSeq: 0, view: 'all', sel: null, detail: null, shown: null, recoveryCodes: null,
@@ -75,7 +75,9 @@
   // ---- rendering --------------------------------------------------------------------------------
   function render() {
     $('nav').innerHTML = NAV.map(([k, i, l]) => `<button class="nl ${S.view === k ? 'on' : ''}" data-act="nav" data-view="${k}"><span>${i}</span><span>${l}</span></button>`).join('');
-    const v = S.view; $('title').textContent = NAV.find((n) => n[0] === v)[2];
+    const v = S.view;
+    const currentFolder = v === 'folder' && S.folder !== null ? S.folders.find((folder) => folder.id === S.folder) : null;
+    $('title').textContent = currentFolder ? currentFolder.name : NAV.find((n) => n[0] === v)[2];
     const subtitles = {
       all: 'Your accounts and private notes, in one place.',
       app: 'Sign-in details for your apps and online accounts.',
@@ -85,7 +87,7 @@
       set: 'Security, appearance, and vault maintenance.'
     };
     $('subtitle').textContent = subtitles[v] || subtitles.all;
-    $('q').hidden = v === 'set';
+    $('q').hidden = v === 'set' || v === 'folder';
     if (v === 'set') { $('content').innerHTML = settingsHtml(); return; }
     const source = S.searchResults || S.items;
     const list = source.filter((x) => (v === 'all' || v === 'folder' || (v === 'fav' ? x.favorite : x.kind === v)));
