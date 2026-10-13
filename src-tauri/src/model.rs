@@ -976,6 +976,10 @@ mod tests {
 
         let mut note = input("Private note");
         note.kind = "note".into();
+        note.username.clear();
+        note.password = None;
+        note.totp_secret = None;
+        note.passkey = false;
         let (note_id, undo) = m.upsert(note).unwrap();
         undo.discard();
         assert!(m.add_recovery_codes(note_id, vec!["not-allowed".into()]).is_err());
