@@ -1,0 +1,31 @@
+[package]
+name = "usna-vault-core-fuzz"
+version = "0.0.0"
+publish = false
+license = "Apache-2.0"
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# The core refuses `insecure-test-params` in builds without debug assertions. If the fuzz build trips
+# that guard, run `cargo fuzz run --dev <target>` (Linux/WSL, nightly toolchain).
+usna-vault-core = { path = "..", features = ["insecure-test-params"] }
+
+[workspace]
+
+[[bin]]
+name = "header_parse"
+path = "fuzz_targets/header_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "snapshot_open"
+path = "fuzz_targets/snapshot_open.rs"
+test = false
+doc = false
+bench = false

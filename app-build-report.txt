@@ -1,0 +1,79 @@
+﻿USNA Secure app build: 2026-10-13T13:58:44.7631996+05:30
+
+=== app unit tests (TOTP RFC vectors, model, generator) ===
+> (in D:\Codes\usna-secure\src-tauri) cargo test --locked
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
+     Running unittests src\main.rs (target\debug\deps\usna_secure_app-6df0287565f9209d.exe)
+
+running 34 tests
+test commands::tests::generated_passwords_have_requested_length_and_vary ... ok
+test commands::tests::failed_rename_folder_keeps_the_old_name ... ok
+test commands::tests::failed_import_commit_leaves_no_record_and_does_not_burn_a_file_id ... ok
+test commands::tests::failed_file_deletion_keeps_the_record_and_the_object ... ok
+test commands::tests::integrity_check_reports_real_problems_and_stays_quiet_when_healthy ... ok
+test commands::tests::failed_create_folder_changes_nothing_and_consumes_no_id ... ok
+test commands::tests::random_below_stays_in_range ... ok
+test commands::tests::totp_secret_roundtrip ... ok
+test commands::tests::failed_header_write_keeps_the_old_password_everywhere ... ok
+test model::tests::folders_and_files ... ok
+test commands::tests::unlock_backoff_schedule ... ok
+test model::tests::create_update_keep_delete ... ok
+test model::tests::old_vaults_without_folders_still_load ... ok
+test model::tests::validation_errors_change_nothing ... ok
+test commands::tests::failed_folder_deletion_keeps_folder_and_files_and_deletes_no_objects ... ok
+test model::tests::mime_guessing_and_preview_rules ... ok
+test model::tests::forward_compatible_deserialization ... ok
+test model::tests::views_never_contain_the_secret ... ok
+test commands::tests::rejected_operations_do_not_write_anything ... ok
+test model::tests::every_mutation_is_exactly_undoable ... ok
+test totp::tests::base32_decoding ... ok
+test totp::tests::rejects_bad_parameters ... ok
+test totp::tests::rfc6238_sha1 ... ok
+test store::tests::id_validation_blocks_path_tricks ... ok
+test totp::tests::six_digit_codes_are_truncations_of_the_same_value ... ok
+test totp::tests::rfc6238_sha256 ... ok
+test util::tests::base64_known_answers ... ok
+test util::tests::hex_roundtrip ... ok
+test totp::tests::rfc6238_sha512 ... ok
+test commands::tests::failed_item_operations_are_all_reverted ... ok
+test store::tests::second_lock_is_refused_until_the_first_is_released ... ok
+test store::tests::atomic_writes_replace_and_leave_no_temp_file ... ok
+test commands::tests::revision_advances_only_on_successful_saves ... ok
+test store::tests::object_lifecycle_and_leftover_cleanup ... ok
+
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+exit code: 0  [ok]
+
+=== app clippy (informational) ===
+> (in D:\Codes\usna-secure\src-tauri) cargo clippy --locked --all-targets -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.60s
+exit code: 0  [ok]
+
+=== tauri-cli present ===
+> (in D:\Codes\usna-secure) cargo tauri --version
+tauri-cli 2.12.2
+exit code: 0  [ok]
+
+=== build desktop app + Windows installer ===
+> (in D:\Codes\usna-secure) cargo tauri build
+        Info Looking up installed tauri packages to check mismatched versions...
+   Compiling usna-secure-app v0.1.0 (D:\Codes\usna-secure\src-tauri)
+    Finished `release` profile [optimized] target(s) in 1m 55s
+       Built application at: D:\Codes\usna-secure\src-tauri\target\release\usna-secure-app.exe
+        Info Patching D:\Codes\usna-secure\src-tauri\target\release\usna-secure-app.exe with bundle type information: nsis
+        Info Target: x64
+     Running makensis to produce D:\Codes\usna-secure\src-tauri\target\release\bundle\nsis\USNA Secure_0.1.0_x64-setup.exe
+    Finished 1 bundle at:
+        D:\Codes\usna-secure\src-tauri\target\release\bundle\nsis\USNA Secure_0.1.0_x64-setup.exe (2.01 MiB)
+System.Management.Automation.RemoteException
+exit code: 0  [ok]
+
+================ SUMMARY ================
+ok     exit=0    app unit tests (TOTP RFC vectors, model, generator)
+ok     exit=0    app clippy (informational)
+ok     exit=0    tauri-cli present
+ok     exit=0    build desktop app + Windows installer
+RESULT: all required steps exited 0.
+Run the app:   src-tauri\target\release\usna-secure-app.exe
+Installer in:  src-tauri\target\release\bundle\nsis\

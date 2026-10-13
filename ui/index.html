@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>USNA Secure</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="bg" aria-hidden="true"><i></i><i></i></div>
+
+<section id="setup" class="center" hidden>
+  <form id="setupForm" class="lockbox glass" autocomplete="off">
+    <div class="mark">🔒</div>
+    <h1>Create your vault</h1>
+    <p>Choose a master password. It protects everything in the vault and cannot be recovered if you forget it.</p>
+    <input class="in" id="spw" type="password" placeholder="Master password (12+ characters)" aria-label="Master password">
+    <div class="bar"><i id="sbar"></i></div>
+    <input class="in" id="spw2" type="password" placeholder="Repeat master password" aria-label="Repeat master password" style="margin-top:12px">
+    <div class="err" id="serr" role="alert"></div>
+    <button class="btn pri wide" id="sbtn">Create vault</button>
+    <div class="note">Everything stays on this computer. Key derivation takes a moment by design.</div>
+  </form>
+</section>
+
+<section id="lock" class="center" hidden>
+  <form id="lockForm" class="lockbox glass" autocomplete="off">
+    <div class="mark">🔒</div>
+    <h1>USNA Secure</h1>
+    <p id="lockMsg">Your vault is locked.</p>
+    <input class="in" id="pw" type="password" placeholder="Master password" aria-label="Master password">
+    <div class="err" id="lerr" role="alert"></div>
+    <button class="btn pri wide" id="lbtn">Unlock vault</button>
+  </form>
+</section>
+
+<div id="app" hidden>
+  <aside class="glass">
+    <div class="brand"><div class="mark">🔒</div><b>USNA Secure</b></div>
+    <div id="nav"></div>
+    <div class="sp"></div>
+    <button class="nl" data-act="lock" title="Ctrl+L"><span>🔒</span><span>Lock now</span></button>
+  </aside>
+  <main class="glass">
+    <div class="top">
+      <h2 id="title">All items</h2>
+      <input class="in" id="q" placeholder="Search vault" aria-label="Search vault">
+      <button class="btn pri" data-act="newItem">New item</button>
+    </div>
+    <div id="content"></div>
+  </main>
+  <section id="detail" class="glass"></section>
+</div>
+
+<dialog id="dlg">
+  <form id="itemForm" autocomplete="off">
+    <h3 id="dlgTitle">New item</h3>
+    <label for="fk">Type</label>
+    <select class="in" id="fk"><option value="app">App or account</option><option value="note">Secure note</option></select>
+    <label for="ft">Name</label><input class="in" id="ft" required placeholder="e.g. Google">
+    <div id="appFields">
+      <label for="fu">Email or username</label><input class="in" id="fu" placeholder="you@example.com">
+      <label for="fp">Password</label>
+      <div class="row"><input class="in mono" id="fp" style="margin:0"><button type="button" class="btn" data-act="gen">Generate</button></div>
+      <div class="bar"><i id="fbar"></i></div>
+      <label for="fo">Authenticator secret (Base32, optional)</label><input class="in mono" id="fo" placeholder="JBSW Y3DP EHPK 3PXP">
+      <label class="chk"><input type="checkbox" id="fa"> I have a passkey for this app (record only; passkey sign-in is not supported yet)</label>
+    </div>
+    <label for="fn">Notes</label><textarea class="in" id="fn" rows="3"></textarea>
+    <div class="err" id="ferr" role="alert"></div>
+    <div class="row end"><button type="button" class="btn" data-act="closeDlg">Cancel</button><button class="btn pri">Save</button></div>
+  </form>
+</dialog>
+
+<dialog id="pwdlg">
+  <form id="pwForm" autocomplete="off">
+    <h3>Change master password</h3>
+    <label for="cp0">Current password</label><input class="in" id="cp0" type="password">
+    <label for="cp1">New password (12+ characters)</label><input class="in" id="cp1" type="password">
+    <label for="cp2">Repeat new password</label><input class="in" id="cp2" type="password">
+    <div class="note">Changing the password re-protects the vault key. Older backups and copies of the vault still open with the old password.</div>
+    <div class="err" id="perr" role="alert"></div>
+    <div class="row end"><button type="button" class="btn" data-act="closePw">Cancel</button><button class="btn pri">Change password</button></div>
+  </form>
+</dialog>
+
+<dialog id="namedlg">
+  <form id="nameForm" autocomplete="off">
+    <h3 id="nameTitle">New folder</h3>
+    <label for="nm">Folder name</label><input class="in" id="nm" required maxlength="80">
+    <div class="err" id="nerr" role="alert"></div>
+    <div class="row end"><button type="button" class="btn" data-act="closeName">Cancel</button><button class="btn pri">Save</button></div>
+  </form>
+</dialog>
+
+<div class="toast glass" id="toast" role="status"></div>
+<script src="app.js"></script>
+</body>
+</html>

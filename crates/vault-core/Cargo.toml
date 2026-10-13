@@ -1,0 +1,35 @@
+[package]
+name = "usna-vault-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "USNA Secure vault core: key hierarchy, authenticated header, sealed snapshots, key wrapping (no UI, no Tauri)."
+
+[features]
+default = []
+# Lowers the Argon2id minimums so tests run fast. Refused in release builds (see lib.rs).
+insecure-test-params = []
+
+[dependencies]
+# Each crypto/secret-handling dependency is justified in docs/DEPENDENCIES.md.
+# 0.5.x on purpose: 0.6 exists (edition 2024, new API) and has not been evaluated. Defaults off:
+# drops password-hash/rand_core, which we do not use.
+argon2 = { version = "0.5", default-features = false, features = ["alloc", "zeroize"] }
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+hkdf = "0.12"
+sha2 = "0.10"
+zeroize = { version = "1", features = ["derive"] }
+secrecy = "0.8"
+getrandom = "0.2"
+subtle = "2"
+thiserror = "1"
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+proptest = "1"
+hex = "0.4"
+
+[lints]
+workspace = true

@@ -1,0 +1,39 @@
+[package]
+name = "usna-secure-app"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "USNA Secure desktop shell (Tauri 2). Thin command layer over usna-vault-core."
+
+# Deliberately its own workspace: the verified core pipeline (scripts/verify.ps1) must never depend on
+# the Tauri build, and this app has its own Cargo.lock.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# Native open/save dialogs, invoked from Rust only (no dialog permission is granted to the WebView).
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+usna-vault-core = { package = "usna-vault-core", path = "../crates/vault-core" }
+zeroize = "1"
+getrandom = "0.2"
+hmac = "0.12"
+sha1 = "0.10"
+sha2 = "0.10"
+# Clipboard written from Rust so secrets never travel to JavaScript just to be copied.
+arboard = { version = "3", default-features = false }
+
+[dev-dependencies]
+# Weak Argon2 parameters so session tests run in milliseconds. Dev-dependency features are not applied
+# to normal or release builds, and the core refuses this feature in builds without debug assertions.
+usna-vault-core = { package = "usna-vault-core", path = "../crates/vault-core", features = ["insecure-test-params"] }
+
+[profile.release]
+overflow-checks = true
+lto = true
+codegen-units = 1

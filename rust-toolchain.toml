@@ -1,0 +1,7 @@
+# Minimum supported: 1.85.0 (declared in Cargo.toml, not yet verified by a build).
+# After the first fully green run, replace "stable" with that exact version (e.g. "1.9x.0") so
+# builds are reproducible, and record it in docs/VERIFICATION.md.
+[toolchain]
+channel = "stable"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

@@ -1,0 +1,9 @@
+/target
+**/*.rs.bk
+*.usna
+fuzz/corpus
+fuzz/artifacts
+__pycache__/
+/verification-report.txt
+/src-tauri/target
+/src-tauri/gen
