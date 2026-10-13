@@ -13,7 +13,7 @@
 use std::{
     collections::HashSet,
     fs::File,
-    io::{BufWriter, Read},
+    io::{BufWriter, Read, Write},
     sync::Mutex,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -29,7 +29,8 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
     model::{
-        guess_mime, FileRecord, FileView, FolderView, ItemInput, ItemSummary, ItemView, Model, Settings, Undo,
+        guess_mime, AccountExportDocument, FileRecord, FileView, FolderView, ItemInput, ItemSummary, ItemView, Model,
+        PortableItem, Settings, Undo,
         PREVIEW_MAX_BYTES, PREVIEW_MIMES,
     },
     store::{Backend, Store},
@@ -39,6 +40,9 @@ use crate::{
 
 /// App-level policy (the core only rejects empty passwords).
 const MIN_PASSWORD_CHARS: usize = 12;
+const ACCOUNT_EXPORT_FORMAT: &str = "USNA Secure Account Export";
+const ACCOUNT_EXPORT_VERSION: u32 = 1;
+const MAX_ACCOUNT_EXPORT_BYTES: u64 = 10 * 1024 * 1024;
 
 pub struct Session {
     vault: UnlockedVault,
@@ -106,6 +110,9 @@ impl Session {
     }
     fn delete_item(&mut self, id: u64) -> Result<(), String> {
         self.commit(|m| m.delete(id).map(|u| ((), u)))
+    }
+    fn import_accounts(&mut self, records: Vec<PortableItem>) -> Result<usize, String> {
+        self.commit(|m| m.import_accounts(records))
     }
     fn add_recovery_codes(&mut self, id: u64, codes: Vec<String>) -> Result<usize, String> {
         self.commit(|m| m.add_recovery_codes(id, codes))
@@ -397,6 +404,83 @@ pub fn touch(state: State<'_, AppState>) -> Result<(), String> {
 pub fn list_items(state: State<'_, AppState>) -> Result<Vec<ItemSummary>, String> {
     with_session(state.inner(), |s| Ok(s.model.items.iter().map(|i| i.summary()).collect()))
 }
+
+/// Writes a plaintext JSON export only after the UI asks for explicit confirmation.
+/// The resulting file contains account secrets and must be protected accordingly.
+#[tauri::command]
+pub fn export_accounts(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+    let bytes = with_session(state.inner(), |s| {
+        let document = AccountExportDocument {
+            format: ACCOUNT_EXPORT_FORMAT.to_string(),
+            version: ACCOUNT_EXPORT_VERSION,
+            items: s.model.items.iter().map(|item| PortableItem {
+                kind: item.kind.clone(),
+                title: item.title.clone(),
+                favorite: item.favorite,
+                username: item.username.clone(),
+                password: item.password.clone(),
+                totp_secret: item.totp_secret.clone(),
+                passkey: item.passkey,
+                notes: item.notes.clone(),
+                recovery_codes: item.recovery_codes.clone(),
+            }).collect(),
+        };
+        serde_json::to_vec_pretty(&document).map(Zeroizing::new)
+            .map_err(|_| "Could not serialize account data for export.".to_string())
+    })?;
+
+    let Some(dest) = app.dialog().file()
+        .set_file_name("usna-secure-accounts.json")
+        .blocking_save_file()
+    else {
+        return Ok(false);
+    };
+    let dest = dest.into_path().map_err(|e| format!("Cannot use that location: {e}"))?;
+    let write_result = (|| -> std::io::Result<()> {
+        let mut output = File::create(&dest)?;
+        output.write_all(bytes.as_slice())?;
+        output.sync_all()
+    })();
+    if let Err(e) = write_result {
+        let _ = std::fs::remove_file(&dest);
+        return Err(short_io(&e));
+    }
+    Ok(true)
+}
+
+/// Imports an explicit plaintext JSON export as new records. Existing records are never overwritten.
+#[tauri::command]
+pub fn import_accounts(app: AppHandle, state: State<'_, AppState>) -> Result<usize, String> {
+    let Some(picked) = app.dialog().file()
+        .add_filter("USNA Secure account export", &["json"])
+        .blocking_pick_file()
+    else {
+        return Ok(0);
+    };
+    let path = picked.into_path().map_err(|e| format!("Cannot use that file: {e}"))?;
+    let metadata = std::fs::metadata(&path).map_err(|e| short_io(&e))?;
+    if metadata.len() > MAX_ACCOUNT_EXPORT_BYTES {
+        return Err("The account export exceeds the 10 MiB size limit.".into());
+    }
+    let input = File::open(&path).map_err(|e| short_io(&e))?;
+    let mut bytes = Zeroizing::new(Vec::with_capacity(metadata.len() as usize));
+    let mut limited = input.take(MAX_ACCOUNT_EXPORT_BYTES + 1);
+    limited.read_to_end(&mut bytes).map_err(|e| short_io(&e))?;
+    if bytes.len() as u64 > MAX_ACCOUNT_EXPORT_BYTES {
+        return Err("The account export exceeds the 10 MiB size limit.".into());
+    }
+
+    let mut document: AccountExportDocument = serde_json::from_slice(&bytes)
+        .map_err(|_| "The selected file is not a valid USNA Secure account export.".to_string())?;
+    if document.format != ACCOUNT_EXPORT_FORMAT || document.version != ACCOUNT_EXPORT_VERSION {
+        return Err("This file is not a supported USNA Secure account export.".into());
+    }
+    let records = std::mem::take(&mut document.items);
+    drop(document);
+    with_session(state.inner(), |s| s.import_accounts(records))
+}
+
+
 
 /// Search non-secret metadata in Rust. Passwords, TOTP seeds, recovery codes and file contents are excluded.
 #[tauri::command]
