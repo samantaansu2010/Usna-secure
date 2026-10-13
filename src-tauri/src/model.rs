@@ -758,6 +758,67 @@ mod tests {
     }
 
     #[test]
+    fn account_import_is_validated_as_a_batch_and_undoable() {
+        let mut m = Model::default();
+        let app = PortableItem {
+            kind: "app".into(),
+            title: "Discord".into(),
+            favorite: true,
+            username: "account@example.test".into(),
+            password: "secret-password".into(),
+            totp_secret: String::new(),
+            passkey: false,
+            notes: "primary account".into(),
+            recovery_codes: vec![RecoveryCode { code: "recovery-one".into(), used: true }],
+        };
+        let note = PortableItem {
+            kind: "note".into(),
+            title: "Private note".into(),
+            favorite: false,
+            username: String::new(),
+            password: String::new(),
+            totp_secret: String::new(),
+            passkey: false,
+            notes: "keep this private".into(),
+            recovery_codes: Vec::new(),
+        };
+
+        let (count, undo) = m.import_accounts(vec![app, note]).unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(m.items[0].id, 1, "import assigns fresh local IDs");
+        assert!(m.items[0].favorite);
+        assert_eq!(m.items[0].recovery_codes[0].code, "recovery-one");
+        assert!(m.items[0].recovery_codes[0].used);
+        assert_eq!(m.next_id, 3);
+        m.revert(undo);
+        assert!(m.items.is_empty(), "bulk import undo removes the entire batch");
+        assert_eq!(m.next_id, 1, "bulk import undo restores the ID counter");
+
+        let before = json(&m);
+        let invalid_note = PortableItem {
+            kind: "note".into(),
+            title: "Invalid note".into(),
+            favorite: false,
+            username: String::new(),
+            password: "secret-not-allowed-on-note".into(),
+            totp_secret: String::new(),
+            passkey: false,
+            notes: String::new(),
+            recovery_codes: Vec::new(),
+        };
+        assert!(m.import_accounts(vec![invalid_note]).is_err());
+        assert_eq!(json(&m), before, "a rejected export changes nothing");
+    }
+
+    #[test]
+    fn older_items_without_recovery_codes_still_deserialize() {
+        let mut value = serde_json::to_value(Item::default()).unwrap();
+        value.as_object_mut().unwrap().remove("recovery_codes");
+        let restored: Item = serde_json::from_value(value).unwrap();
+        assert!(restored.recovery_codes.is_empty());
+    }
+
+    #[test]
     fn recovery_codes_are_account_scoped_counted_and_undoable() {
         let mut m = Model::default();
         let (id, undo) = m.upsert(input("Discord")).unwrap();
