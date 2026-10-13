@@ -61,7 +61,7 @@ pub struct AccountExportDocument {
 }
 
 /// The portable format intentionally excludes internal item IDs and file metadata.
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Default)]
 #[serde(default)]
 pub struct PortableItem {
     pub kind: String,
@@ -73,6 +73,41 @@ pub struct PortableItem {
     pub passkey: bool,
     pub notes: String,
     pub recovery_codes: Vec<RecoveryCode>,
+}
+
+/// Deserialization helper without Drop, since Serde's generated deserializer moves its fields.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct PortableItemData {
+    kind: String,
+    title: String,
+    favorite: bool,
+    username: String,
+    password: String,
+    totp_secret: String,
+    passkey: bool,
+    notes: String,
+    recovery_codes: Vec<RecoveryCode>,
+}
+
+impl<'de> Deserialize<'de> for PortableItem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let mut data = PortableItemData::deserialize(deserializer)?;
+        Ok(Self {
+            kind: std::mem::take(&mut data.kind),
+            title: std::mem::take(&mut data.title),
+            favorite: data.favorite,
+            username: std::mem::take(&mut data.username),
+            password: std::mem::take(&mut data.password),
+            totp_secret: std::mem::take(&mut data.totp_secret),
+            passkey: data.passkey,
+            notes: std::mem::take(&mut data.notes),
+            recovery_codes: std::mem::take(&mut data.recovery_codes),
+        })
+    }
 }
 
 impl Drop for PortableItem {
